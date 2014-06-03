@@ -10,11 +10,12 @@ import System.Environment
 
 defaultConfig :: IO Config
 defaultConfig = return Config {
-        cfgServer="irc.freenode.org",
-        cfgPort=6667,
+        cfgServer="irc.freenode.net",
+        cfgPort=7000, --6667,
         cfgNick="duckduckbot",
         cfgNickServPassword=Just "ahquohph",
-        cfgChannel="#blablablablabla"
+        cfgChannel="#blablablablabla",
+        cfgUseSsl=True --False
     }
 
 newConfig :: IO Config
@@ -24,11 +25,13 @@ newConfig = do
     nick             <- lookupEnv "DDB_NICK"
     nickServPassword <- lookupEnv "DDB_NICKSERV_PASSWORD"
     channel          <- lookupEnv "DDB_CHANNEL"
+    useSsl           <- lookupEnv "DDB_USE_SSL"
     return Config {
         cfgServer=fromJust server,
         cfgPort=read $ fromJust port,
         cfgNick=fromJust nick,
         cfgNickServPassword=nickServPassword,
-        cfgChannel=fromJust channel
+        cfgChannel=fromJust channel,
+        cfgUseSsl=fromJust useSsl == "1"
     }
 -- FIXME: Error checking
