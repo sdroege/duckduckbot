@@ -5,6 +5,7 @@ import DuckDuckBot.Config
 import DuckDuckBot.Connection
 
 import DuckDuckBot.Commands.Ping
+import DuckDuckBot.Commands.Duck
 
 import qualified Data.ByteString.UTF8 as UB
 
@@ -16,7 +17,7 @@ import Control.Concurrent
 import qualified Network.IRC as IRC
 
 messageHandlers :: [MessageHandler]
-messageHandlers = [pingCommandHandler]
+messageHandlers = [pingCommandHandler, duckCommandHandler]
 
 main :: IO ()
 main = bracket setup shutdown loop
@@ -39,7 +40,8 @@ setup = do
     _ <- liftIO . forkIO $ runReaderT (writeLoop outChan connection) env
 
     -- Start all message handlers here
-    let pluginEnv = PluginEnv { pluginEnvNick = cfgNick config
+    let pluginEnv = PluginEnv { pluginEnvNick    = cfgNick config,
+                                pluginEnvChannel = cfgChannel config
                               }
         runMessageHandler m = do
                                  mChan <- dupChan inChan

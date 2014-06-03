@@ -25,6 +25,7 @@ executable duckduckbot
                        utf8-string ==0.3.*,
                        data-default ==0.5.*,
                        attoparsec ==0.10.*,
+                       random ==1.0.*,
                        network ==2.4.*,
                        tls ==1.2.*,
                        cprng-aes ==0.5.*,

@@ -35,7 +35,8 @@ data Config = Config {
 
 type PluginEnvReader = ReaderT PluginEnv
 data PluginEnv = PluginEnv {
-    pluginEnvNick :: String
+    pluginEnvNick    :: String,
+    pluginEnvChannel :: String
 }
 
 data InMessage  = InIRCMessage IRC.Message |
