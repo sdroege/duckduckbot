@@ -35,7 +35,14 @@ newConnection :: String -> Int -> Bool -> IO Connection
 newConnection server port True = do
     h <- newHandle server port
     caStore <- getSystemCertificateStore
-    let params = (TLS.defaultParamsClient server B.empty) { TLS.clientSupported=def { TLS.supportedCiphers = TLSE.ciphersuite_medium }, TLS.clientShared=def { TLS.sharedCAStore = caStore } }
+    let params = (TLS.defaultParamsClient server B.empty) {
+                                                            TLS.clientSupported=def {
+                                                                                        TLS.supportedCiphers = TLSE.ciphersuite_medium
+                                                                                    },
+                                                            TLS.clientShared=def    {
+                                                                                        TLS.sharedCAStore = caStore
+                                                                                    }
+                                                          }
     rnd <- RNG.makeSystem
     ctx <- TLS.contextNew h params rnd
     TLS.handshake ctx
