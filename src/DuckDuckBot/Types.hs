@@ -6,7 +6,8 @@ module DuckDuckBot.Types (
     OutMessage (..),
     MessageHandler,
     PluginEnv (..),
-    PluginEnvReader
+    PluginEnvReader,
+    module DuckDuckBot.Connection
 ) where
 
 import DuckDuckBot.Connection

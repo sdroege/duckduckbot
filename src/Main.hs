@@ -2,7 +2,6 @@ module Main (main) where
 
 import DuckDuckBot.Types
 import DuckDuckBot.Config
-import DuckDuckBot.Connection
 
 import DuckDuckBot.Commands.Ping
 import DuckDuckBot.Commands.Duck
