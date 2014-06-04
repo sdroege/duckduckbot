@@ -39,12 +39,12 @@ setup = do
     _ <- liftIO . forkIO $ runReaderT (writeLoop outChan connection) env
 
     -- Start all message handlers here
-    let pluginEnv = PluginEnv { pluginEnvNick    = cfgNick config,
-                                pluginEnvChannel = cfgChannel config
-                              }
+    let messageHandlerEnv   = MessageHandlerEnv { messageHandlerEnvNick    = cfgNick config,
+                                                  messageHandlerEnvChannel = cfgChannel config
+                                                }
         runMessageHandler m = do
                                  mChan <- dupChan inChan
-                                 runReaderT (m mChan outChan) pluginEnv
+                                 runReaderT (m mChan outChan) messageHandlerEnv
     mapM_ (liftIO . forkIO . runMessageHandler) messageHandlers
 
     return env

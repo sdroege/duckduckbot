@@ -5,8 +5,8 @@ module DuckDuckBot.Types (
     InMessage (..),
     OutMessage (..),
     MessageHandler,
-    PluginEnv (..),
-    PluginEnvReader,
+    MessageHandlerEnv (..),
+    MessageHandlerEnvReader,
     module DuckDuckBot.Connection
 ) where
 
@@ -34,10 +34,10 @@ data Config = Config {
     cfgUseSsl           :: Bool
 } deriving (Show)
 
-type PluginEnvReader = ReaderT PluginEnv
-data PluginEnv = PluginEnv {
-    pluginEnvNick    :: String,
-    pluginEnvChannel :: String
+type MessageHandlerEnvReader = ReaderT MessageHandlerEnv
+data MessageHandlerEnv = MessageHandlerEnv {
+    messageHandlerEnvNick    :: String,
+    messageHandlerEnvChannel :: String
 }
 
 data InMessage  = InIRCMessage IRC.Message |
@@ -45,5 +45,5 @@ data InMessage  = InIRCMessage IRC.Message |
 
 data OutMessage = OutIRCMessage IRC.Message
 
-type MessageHandler = Chan InMessage -> Chan OutMessage -> PluginEnvReader IO ()
+type MessageHandler = Chan InMessage -> Chan OutMessage -> MessageHandlerEnvReader IO ()
 
