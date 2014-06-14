@@ -26,6 +26,7 @@ import qualified Crypto.Random.AESCtr as RNG
 
 import Control.Applicative
 import Control.Monad.State
+import Control.Monad.Reader
 
 import Data.Attoparsec.ByteString
 
@@ -71,19 +72,16 @@ putMessageConnection (TLSConnection (ctx, _)) m = do
     TLS.sendData ctx (BL.fromChunks [s, "\r\n"])
     putStrLn ("> " ++ UB.toString s)
 
-data ConnectionReadContext = ConnectionReadContext {
-    ctxConnection :: Connection,
-    ctxState :: Maybe (Result IRC.Message)
-}
+type ConnectionReadState = Maybe (Result IRC.Message)
 
-type ConnectionReader = StateT ConnectionReadContext
+type ConnectionReader m = ReaderT Connection (StateT ConnectionReadState m)
 runConnectionReader :: (MonadIO m) => Connection -> ConnectionReader m a -> m a
-runConnectionReader c f = evalStateT f ConnectionReadContext {ctxConnection = c, ctxState = Nothing}
+runConnectionReader c f = evalStateT (runReaderT f c) Nothing
 
 -- TODO: Catch errors and return Nothing
 getMessage :: (MonadIO m) => ConnectionReader m (Maybe IRC.Message)
 getMessage = do
-    c  <- gets ctxConnection
+    c  <- ask
     case c of
         (TCPConnection h)        -> getMessageInternalTCP h
         (TLSConnection (ctx, _)) -> getMessageInternalTLS ctx
@@ -97,7 +95,7 @@ getMessageInternalTCP h = do
 getMessageInternalTLS :: (MonadIO m) => TLS.Context -> ConnectionReader m (Maybe IRC.Message)
 getMessageInternalTLS ctx = do
     -- Read data or get leftover data from last run
-    s    <- gets ctxState
+    s    <- get
     line <- case s of
                 Just (Done t _) -> return t
                 _               -> liftIO $ TLS.recvData ctx
@@ -109,8 +107,7 @@ getMessageInternalTLS ctx = do
                 _                -> parse messagecrlf line
 
     -- Remember state
-    c <- get
-    put (c { ctxState = Just r})
+    put (Just r)
 
     -- If we finished a parse, return the message, otherwise
     -- recurse to get more data
