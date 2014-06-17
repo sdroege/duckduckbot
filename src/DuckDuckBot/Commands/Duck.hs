@@ -3,6 +3,7 @@ module DuckDuckBot.Commands.Duck (
 ) where
 
 import DuckDuckBot.Types
+import DuckDuckBot.Utils
 
 import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as UB
@@ -22,30 +23,11 @@ duckCommandHandler cIn cOut = forever $ do
         Quit                             -> return () -- TODO: Handle quit
         _                                -> return ()
     where
-        isDuckCommand msg = command == "PRIVMSG" && length params == 2 && "!duck" `B.isPrefixOf` s
-                            where
-                                command = IRC.msg_command msg
-                                params = IRC.msg_params msg
-                                s = head (tail params)
+        isDuckCommand = isPrivMsgCommand "duck"
 
         handleDuck msg = when (target /= B.empty) $ sendDuck target
                          where
                              target = getPrivMsgReplyTarget msg
-
-        -- TODO: This should be in some utils module
-        getPrivMsgReplyTarget msg | isChannel target  = target
-                                  | isNickName prefix = getNickName prefix
-                                  | otherwise         = B.empty
-                                  where
-                                      target = head (IRC.msg_params msg)
-                                      prefix = IRC.msg_prefix msg
-                                      isChannel = (UB.fromString "#" `B.isPrefixOf`)
-                                      isNickName p = case p of
-                                                         (Just (IRC.NickName {})) -> True
-                                                         _                        -> False
-                                      getNickName p = case p of
-                                                         (Just (IRC.NickName n _ _)) -> n
-                                                         _                           -> B.empty
 
         sendDuck target = do
                              d <- liftIO duck
