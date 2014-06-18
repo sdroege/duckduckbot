@@ -5,6 +5,7 @@ import DuckDuckBot.Config
 
 import DuckDuckBot.Commands.Ping
 import DuckDuckBot.Commands.Duck
+import DuckDuckBot.Commands.Ddg
 
 import qualified Data.ByteString.UTF8 as UB
 
@@ -16,7 +17,7 @@ import Control.Concurrent
 import qualified Network.IRC as IRC
 
 messageHandlers :: [MessageHandler]
-messageHandlers = [pingCommandHandler, duckCommandHandler]
+messageHandlers = [pingCommandHandler, duckCommandHandler, ddgCommandHandler]
 
 main :: IO ()
 main = bracket setup shutdown loop
