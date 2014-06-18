@@ -11,7 +11,6 @@ import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as UB
 
 import Data.Aeson hiding (Result)
-import Data.Text hiding (head, tail, drop)
 
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Client.TLS as HTTPS
@@ -34,56 +33,75 @@ ddgCommandHandler cIn cOut = forever $ do
     where
         isDdgCommand = isPrivMsgCommand "ddg"
 
-        handleDdg msg manager = when (target /= B.empty && query /= B.empty) $ liftIO $ void $ forkIO (handleQuery manager target query)
+        handleDdg msg manager = when (target /= B.empty && query /= B.empty) $ liftIO $ void $ forkIO (handleQuery cOut manager target query)
                                 where
                                     target = getPrivMsgReplyTarget msg
                                     params = IRC.msg_params msg
                                     s = head (tail params)
-                                    isSpace = (== fromIntegral (ord ' '))
-                                    extractQuery = B.takeWhile (not . isSpace) . B.dropWhile isSpace . B.drop 4
+                                    isSpaceB = (== fromIntegral (ord ' '))
+                                    extractQuery = B.dropWhile isSpaceB . B.drop 4
                                     query = extractQuery s
 
-        handleQuery manager target query = do
-                                            response <- doQuery manager (UB.toString query)
-                                            let answer = response
-                                            when (isJust answer) $ writeChan cOut (answerMessage target (UB.fromString (show (fromJust answer))))
+handleQuery :: Chan OutMessage -> HTTP.Manager -> IRC.Parameter -> UB.ByteString -> IO ()
+handleQuery cOut manager target query = do
+    let queryString = UB.toString query
+    response <- doQuery manager queryString
+    when (isJust response) $ do
+        let answer = generateAnswer queryString (fromJust response)
+        when (answer /= "") $ writeChan cOut (answerMessage (UB.fromString answer))
+    where
+        answerMessage answer = OutIRCMessage IRC.Message {  IRC.msg_prefix = Nothing,
+                                                            IRC.msg_command = "PRIVMSG",
+                                                            IRC.msg_params = [target, answer]
+                                                         }
 
-        answerMessage target answer = OutIRCMessage IRC.Message { IRC.msg_prefix = Nothing,
-                                                                  IRC.msg_command = "PRIVMSG",
-                                                                  IRC.msg_params = [target, answer]
-                                                                }
+escapeQuery :: String -> String
+escapeQuery = URI.escapeURIString URI.isUnescapedInURIComponent
 
+firstResultText :: [Result] -> String
+firstResultText ((Result { resultText=rt }):_) = rt
+firstResultText (_:rs)                         = firstResultText rs
+firstResultText _                              = ""
+
+generateAnswer :: String -> Results -> String
+generateAnswer q r | resultsAnswer r /= ""                          = resultsAnswer r ++ " (http://ddg.gg/" ++ escapeQuery q ++ ")"
+                   | resultsAbstractText r /= ""                    = resultsAbstractText r ++ " (" ++ resultsAbstractSource r ++ ", http://ddg.gg/" ++ escapeQuery q ++ ")"
+                   | resultsDefinition r /= ""                      = resultsDefinition r ++ " (" ++ resultsDefinitionSource r ++ ", http://ddg.gg/" ++ escapeQuery q ++ ")"
+                   | firstResultText (resultsRelatedTopics r) /= "" = firstResultText (resultsRelatedTopics r) ++ " (" ++ resultsAbstractSource r ++ ", http://ddg.gg/" ++ escapeQuery q ++ ")"
+                   | resultsRedirect r /= ""                        = resultsRedirect r
+
+                   | otherwise                                      = "http://ddg.gg/" ++ escapeQuery q
 
 data Results = Results {
-    resultsAbstract :: Text,
-    resultsAbstractText :: Text,
-    resultsAbstractSource :: Text,
-    resultsAbstractURL :: Text,
-    resultsImage :: Text,
-    resultsHeading :: Text,
-    resultsAnswer :: Text,
-    resultsRedirect :: Text,
-    resultsAnswerType :: Text,
-    resultsDefinition :: Text,
-    resultsDefinitionSource :: Text,
-    resultsDefinitionURL :: Text,
+    resultsAbstract :: String,
+    resultsAbstractText :: String,
+    resultsAbstractSource :: String,
+    resultsAbstractURL :: String,
+    resultsImage :: String,
+    resultsHeading :: String,
+    resultsAnswer :: String,
+    resultsRedirect :: String,
+    resultsAnswerType :: String,
+    resultsDefinition :: String,
+    resultsDefinitionSource :: String,
+    resultsDefinitionURL :: String,
     resultsRelatedTopics :: [Result],
     resultsResults :: [Result],
-    resultsType :: Text
+    resultsType :: String
 } deriving (Show, Eq)
 
 data Result = Result {
-    resultResult :: Text,
+    resultResult :: String,
     resultIcon :: Maybe Icon,
-    resultFirstURL :: Text,
-    resultText :: Text
+    resultFirstURL :: String,
+    resultText :: String
 } | ResultGroup {
     resultGroupTopics :: [Result],
-    resultGroupName :: Text
+    resultGroupName :: String
 } deriving (Show, Eq)
 
 data Icon = Icon {
-    iconURL :: Text,
+    iconURL :: String,
     iconHeight :: Int,
     iconWidth :: Int
 } deriving (Show, Eq)
@@ -123,17 +141,17 @@ instance FromJSON Icon where
     parseJSON (Object v) = Icon <$>
                                 v .: "URL" <*>
                                 -- Height and width can be an Int or ""
-                                intOrText "Height" <*>
-                                intOrText "Width"
+                                intOrString "Height" <*>
+                                intOrString "Width"
                            where
-                                intOrText s = v .: s <|> (textTo0 <$> (v .: s))
-                                textTo0 :: Text -> Int
-                                textTo0 _ = 0
+                                intOrString s = v .: s <|> (stringTo0 <$> (v .: s))
+                                stringTo0 :: String -> Int
+                                stringTo0 _ = 0
     parseJSON _          = mzero
 
 doQuery :: HTTP.Manager -> String -> IO (Maybe Results)
 doQuery m s = do
-    let q   = URI.escapeURIString URI.isUnescapedInURIComponent s
+    let q   = escapeQuery s
         url = "https://api.duckduckgo.com/?q=" ++ q ++ "&format=json&no_redirect=1&t=ddb&no_html=1"
     req <- HTTP.parseUrl url
 
