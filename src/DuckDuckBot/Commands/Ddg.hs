@@ -61,17 +61,26 @@ escapeQuery :: String -> String
 escapeQuery = URI.escapeURIString URI.isUnescapedInURIComponent
 
 generateAnswer :: String -> Results -> String
-generateAnswer q r | resultsAnswer r /= ""                          = resultsAnswer r ++ " (http://ddg.gg/" ++ escapeQuery q ++ ")"
-                   | resultsAbstractText r /= ""                    = resultsAbstractText r ++ " (" ++ resultsAbstractSource r ++ ", http://ddg.gg/" ++ escapeQuery q ++ ")"
-                   | resultsDefinition r /= ""                      = resultsDefinition r ++ " (" ++ resultsDefinitionSource r ++ ", http://ddg.gg/" ++ escapeQuery q ++ ")"
-                   | firstResultText (resultsRelatedTopics r) /= "" = firstResultText (resultsRelatedTopics r) ++ " (" ++ resultsAbstractSource r ++ ", http://ddg.gg/" ++ escapeQuery q ++ ")"
-                   | resultsRedirect r /= ""                        = resultsRedirect r
+generateAnswer q r = take n a ++ dots ++ take m b
+                        where
+                            maxIRCLen = 400 -- arbitrary number below 512 to allow some space for channel, prefix, etc
+                            (a, b) = generateAnswer' q r
+                            m = min maxIRCLen (length b)
+                            n = max 0 (maxIRCLen-m)
+                            dots = if n < length a then "..." else ""
 
-                   | otherwise                                      = "http://ddg.gg/" ++ escapeQuery q
-                where
-                    firstResultText ((Result { resultText=rt }):_) = rt
-                    firstResultText (_:rs)                         = firstResultText rs
-                    firstResultText _                              = ""
+generateAnswer' :: String -> Results -> (String, String)
+generateAnswer' q r | resultsAnswer r /= ""                          = (resultsAnswer r, " (http://ddg.gg/" ++ escapeQuery q ++ ")")
+                    | resultsAbstractText r /= ""                    = (resultsAbstractText r, " (" ++ resultsAbstractSource r ++ ", http://ddg.gg/" ++ escapeQuery q ++ ")")
+                    | resultsDefinition r /= ""                      = (resultsDefinition r, " (" ++ resultsDefinitionSource r ++ ", http://ddg.gg/" ++ escapeQuery q ++ ")")
+                    | firstResultText (resultsRelatedTopics r) /= "" = (firstResultText (resultsRelatedTopics r), " (" ++ resultsAbstractSource r ++ ", http://ddg.gg/" ++ escapeQuery q ++ ")")
+                    | resultsRedirect r /= ""                        = (resultsRedirect r, "")
+
+                    | otherwise                                      = ("http://ddg.gg/" ++ escapeQuery q, "")
+                 where
+                     firstResultText ((Result { resultText=rt }):_) = rt
+                     firstResultText (_:rs)                         = firstResultText rs
+                     firstResultText _                              = ""
 
 data Results = Results {
     resultsAbstract :: String,
