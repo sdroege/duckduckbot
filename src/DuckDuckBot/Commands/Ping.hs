@@ -14,7 +14,6 @@ pingCommandHandler cIn cOut = forever $ do
     msg <- liftIO $ readChan cIn
     case msg of
         InIRCMessage m | isPingCommand m -> handlePing m
-        Quit                             -> return () -- TODO: Handle quit
         _                                -> return ()
     where
         isPingCommand msg = command == "PING" && length params <= 2

@@ -21,26 +21,28 @@ import Control.Monad
 import Control.Monad.Reader
 import Control.Applicative
 import Control.Concurrent
+import Control.Exception
 
 ddgCommandHandler :: MessageHandler
-ddgCommandHandler cIn cOut = forever $ do
-    msg <- liftIO $ readChan cIn
+ddgCommandHandler cIn cOut = do
     manager <- liftIO $ HTTP.newManager HTTPS.tlsManagerSettings
-    case msg of
-        InIRCMessage m | isDdgCommand m  -> handleDdg m manager
-        Quit                             -> return () -- TODO: Handle quit
-        _                                -> return ()
-    where
-        isDdgCommand = isPrivMsgCommand "ddg"
+    forever $ do
+        msg <- liftIO $ readChan cIn
+        case msg of
+            InIRCMessage m | isDdgCommand m  -> handleDdg m manager
+            _                                -> return ()
+        where
+            isDdgCommand = isPrivMsgCommand "ddg"
 
-        handleDdg msg manager = when (target /= B.empty && query /= B.empty) $ liftIO $ void $ forkIO (handleQuery cOut manager target query)
-                                where
-                                    target = getPrivMsgReplyTarget msg
-                                    params = IRC.msg_params msg
-                                    s = head (tail params)
-                                    isSpaceB = (== fromIntegral (ord ' '))
-                                    extractQuery = B.dropWhile isSpaceB . B.drop 4
-                                    query = extractQuery s
+            handleDdg msg manager = when (target /= B.empty && query /= B.empty) $
+                                        liftIO $ void $ forkIO (handleQuery cOut manager target query)
+                                    where
+                                        target = getPrivMsgReplyTarget msg
+                                        params = IRC.msg_params msg
+                                        s = head (tail params)
+                                        isSpaceB = (== fromIntegral (ord ' '))
+                                        extractQuery = B.dropWhile isSpaceB . B.drop 4
+                                        query = extractQuery s
 
 handleQuery :: Chan OutMessage -> HTTP.Manager -> IRC.Parameter -> UB.ByteString -> IO ()
 handleQuery cOut manager target query = do
@@ -58,11 +60,6 @@ handleQuery cOut manager target query = do
 escapeQuery :: String -> String
 escapeQuery = URI.escapeURIString URI.isUnescapedInURIComponent
 
-firstResultText :: [Result] -> String
-firstResultText ((Result { resultText=rt }):_) = rt
-firstResultText (_:rs)                         = firstResultText rs
-firstResultText _                              = ""
-
 generateAnswer :: String -> Results -> String
 generateAnswer q r | resultsAnswer r /= ""                          = resultsAnswer r ++ " (http://ddg.gg/" ++ escapeQuery q ++ ")"
                    | resultsAbstractText r /= ""                    = resultsAbstractText r ++ " (" ++ resultsAbstractSource r ++ ", http://ddg.gg/" ++ escapeQuery q ++ ")"
@@ -71,6 +68,10 @@ generateAnswer q r | resultsAnswer r /= ""                          = resultsAns
                    | resultsRedirect r /= ""                        = resultsRedirect r
 
                    | otherwise                                      = "http://ddg.gg/" ++ escapeQuery q
+                where
+                    firstResultText ((Result { resultText=rt }):_) = rt
+                    firstResultText (_:rs)                         = firstResultText rs
+                    firstResultText _                              = ""
 
 data Results = Results {
     resultsAbstract :: String,
@@ -153,10 +154,11 @@ doQuery :: HTTP.Manager -> String -> IO (Maybe Results)
 doQuery m s = do
     let q   = escapeQuery s
         url = "https://api.duckduckgo.com/?q=" ++ q ++ "&format=json&no_redirect=1&t=ddb&no_html=1"
-    req <- HTTP.parseUrl url
-
-    resp <- HTTP.httpLbs req m
-
-    let d = decode (HTTP.responseBody resp) :: Maybe Results
-    return d
+    -- Catch all exceptions here and return nothing
+    -- Better do nothing than crashing when we can't do the HTTP request
+    handle (\(SomeException e) -> print ("Exception while handling Ddg request \"" ++ s ++ "\": " ++ show e) >> return Nothing) $ do
+        req <- HTTP.parseUrl url
+        resp <- HTTP.httpLbs req m
+        let d = decode (HTTP.responseBody resp) :: Maybe Results
+        return d
 

@@ -40,9 +40,9 @@ data MessageHandlerEnv = MessageHandlerEnv {
     messageHandlerEnvChannel :: String
 }
 
-data InMessage  = InIRCMessage IRC.Message |
-                  Quit
-
+-- More messages to be added here if we ever have
+-- to tell our command handlers to do anything
+data InMessage  = InIRCMessage IRC.Message
 data OutMessage = OutIRCMessage IRC.Message
 
 type MessageHandler = Chan InMessage -> Chan OutMessage -> MessageHandlerEnvReader IO ()

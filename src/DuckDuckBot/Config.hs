@@ -1,6 +1,5 @@
 module DuckDuckBot.Config (
-    newConfig,
-    defaultConfig
+    getConfig
 ) where
 
 import DuckDuckBot.Types (Config (..))
@@ -8,18 +7,8 @@ import DuckDuckBot.Types (Config (..))
 import Data.Maybe
 import System.Environment
 
-defaultConfig :: IO Config
-defaultConfig = return Config {
-        cfgServer="irc.freenode.net",
-        cfgPort=7000, --6667,
-        cfgNick="duckduckbot",
-        cfgNickServPassword=Just "ahquohph",
-        cfgChannel="#blablablablabla",
-        cfgUseSsl=True --False
-    }
-
-newConfig :: IO Config
-newConfig = do
+getConfig :: IO Config
+getConfig = do
     server           <- lookupEnv "DDB_SERVER"
     port             <- lookupEnv "DDB_PORT"
     nick             <- lookupEnv "DDB_NICK"

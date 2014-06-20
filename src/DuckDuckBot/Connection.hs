@@ -27,14 +27,14 @@ import qualified Crypto.Random.AESCtr as RNG
 import Control.Applicative
 import Control.Monad.State
 import Control.Monad.Reader
+import Control.Exception
 
-import Data.Attoparsec.ByteString
+import Data.Attoparsec.ByteString hiding (try)
 
 data Connection = TCPConnection Handle | TLSConnection (TLS.Context, Handle)
 
 newConnection :: String -> Int -> Bool -> IO Connection
-newConnection server port True = do
-    h <- newHandle server port
+newConnection server port True = bracketOnError (newHandle server port) hClose $ \h -> do
     caStore <- getSystemCertificateStore
     let params = (TLS.defaultParamsClient server B.empty) {
                                                             TLS.clientSupported=def {
@@ -43,7 +43,7 @@ newConnection server port True = do
                                                             TLS.clientShared=def    {
                                                                                         TLS.sharedCAStore = caStore
                                                                                     }
-                                                          }
+                                                            }
     rnd <- RNG.makeSystem
     ctx <- TLS.contextNew h params rnd
     TLS.handshake ctx
@@ -62,10 +62,15 @@ closeConnection (TCPConnection h) = hClose h
 closeConnection (TLSConnection (ctx, h)) = TLS.bye ctx >> hClose h
 
 putMessageConnection :: Connection -> IRC.Message -> IO ()
-putMessageConnection (TCPConnection h)        m = do
-    let s = IRC.encode m
-    BL.hPutStr h (BL.fromChunks [s, "\r\n"])
-    putStrLn ("> " ++ UB.toString s)
+putMessageConnection (TCPConnection h) m = do
+    -- Catch all possible exceptions when evaluating encoding
+    -- as a IRC message and make sure we have a 
+    evS <- liftIO (try (evaluate (IRC.encode m)) :: IO (Either SomeException UB.ByteString))
+    case evS of
+        Right s -> do
+                        BL.hPutStr h (BL.fromChunks [s, "\r\n"])
+                        putStrLn ("> " ++ UB.toString s)
+        Left e  -> liftIO $ print ("Exception in putMessageConnection: " ++ show e)
 
 putMessageConnection (TLSConnection (ctx, _)) m = do
     let s = IRC.encode m
@@ -78,21 +83,23 @@ type ConnectionReader m = ReaderT Connection (StateT ConnectionReadState m)
 runConnectionReader :: (MonadIO m) => Connection -> ConnectionReader m a -> m a
 runConnectionReader c f = evalStateT (runReaderT f c) Nothing
 
--- TODO: Catch errors and return Nothing
-getMessage :: (MonadIO m) => ConnectionReader m (Maybe IRC.Message)
+getMessage :: (MonadIO m) => ConnectionReader m IRC.Message
 getMessage = do
     c  <- ask
     case c of
         (TCPConnection h)        -> getMessageInternalTCP h
         (TLSConnection (ctx, _)) -> getMessageInternalTLS ctx
 
-getMessageInternalTCP :: (MonadIO m) => Handle -> ConnectionReader m (Maybe IRC.Message)
+getMessageInternalTCP :: (MonadIO m) => Handle -> ConnectionReader m IRC.Message
 getMessageInternalTCP h = do
     line <- liftIO $ B.hGetLine h
     liftIO $ putStrLn ("< " ++ UB.toString line)
-    return (IRC.decode line)
+    let msg = IRC.decode line
+    case msg of
+        Just m  -> return m
+        Nothing -> getMessageInternalTCP h
 
-getMessageInternalTLS :: (MonadIO m) => TLS.Context -> ConnectionReader m (Maybe IRC.Message)
+getMessageInternalTLS :: (MonadIO m) => TLS.Context -> ConnectionReader m IRC.Message
 getMessageInternalTLS ctx = do
     -- Read data or get leftover data from last run
     s    <- get
@@ -112,7 +119,7 @@ getMessageInternalTLS ctx = do
     -- If we finished a parse, return the message, otherwise
     -- recurse to get more data
     case r of
-        (Done _ msg) -> liftIO $ putStrLn ("< " ++ UB.toString (IRC.encode msg)) >> return (Just msg)
+        (Done _ msg) -> liftIO $ putStrLn ("< " ++ UB.toString (IRC.encode msg)) >> return msg
         _            -> getMessageInternalTLS ctx
 
 messagecrlf :: Parser IRC.Message

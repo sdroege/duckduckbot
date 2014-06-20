@@ -20,7 +20,6 @@ duckCommandHandler cIn cOut = forever $ do
     msg <- liftIO $ readChan cIn
     case msg of
         InIRCMessage m | isDuckCommand m -> handleDuck m
-        Quit                             -> return () -- TODO: Handle quit
         _                                -> return ()
     where
         isDuckCommand = isPrivMsgCommand "duck"
