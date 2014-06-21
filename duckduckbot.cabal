@@ -33,6 +33,7 @@ executable duckduckbot
                        cprng-aes ==0.5.*,
                        x509-system ==1.4.*,
                        irc ==0.6.*,
+                       http-types ==0.8.*,
                        http-client ==0.3.*,
                        http-client-tls ==0.2.*
   hs-source-dirs:      src
