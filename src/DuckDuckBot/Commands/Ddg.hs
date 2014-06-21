@@ -1,5 +1,5 @@
 module DuckDuckBot.Commands.Ddg (
-  ddgCommandHandler
+  ddgCommandHandlerMetadata
 ) where
 
 import DuckDuckBot.Types
@@ -23,6 +23,13 @@ import Control.Monad.Reader
 import Control.Applicative
 import Control.Concurrent
 import Control.Exception
+
+ddgCommandHandlerMetadata :: MessageHandlerMetadata
+ddgCommandHandlerMetadata = MessageHandlerMetadata {
+    messageHandlerMetadataName = "ddg",
+    messageHandlerMetadataCommands = ["!ddg"],
+    messageHandlerMetadataHandler = ddgCommandHandler
+}
 
 ddgCommandHandler :: MessageHandler
 ddgCommandHandler cIn cOut = do

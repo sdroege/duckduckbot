@@ -16,8 +16,8 @@ import Control.Concurrent
 
 import qualified Network.IRC as IRC
 
-messageHandlers :: [MessageHandler]
-messageHandlers = [pingCommandHandler, duckCommandHandler, ddgCommandHandler]
+messageHandlers :: [MessageHandlerMetadata]
+messageHandlers = [pingCommandHandlerMetadata, duckCommandHandlerMetadata, ddgCommandHandlerMetadata]
 
 -- Run everything. We run the read loop in the main thread
 -- and everything else in other threads.
@@ -64,7 +64,7 @@ run env = do
         runMessageHandler m = do
                                  mChan <- dupChan inChan
                                  runReaderT (m mChan outChan) messageHandlerEnv
-    mapM_ (liftIO . forkIO . runMessageHandler) messageHandlers
+    mapM_ (liftIO . forkIO . runMessageHandler . messageHandlerMetadataHandler) messageHandlers
 
     runReaderT (readLoop connection inChan) env
 

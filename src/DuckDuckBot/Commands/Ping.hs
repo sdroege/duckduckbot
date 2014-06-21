@@ -1,5 +1,5 @@
 module DuckDuckBot.Commands.Ping (
-  pingCommandHandler
+  pingCommandHandlerMetadata
 ) where
 
 import DuckDuckBot.Types
@@ -8,6 +8,13 @@ import Control.Monad
 import Control.Monad.Reader
 import Control.Concurrent.Chan
 import qualified Network.IRC as IRC
+
+pingCommandHandlerMetadata :: MessageHandlerMetadata
+pingCommandHandlerMetadata = MessageHandlerMetadata {
+    messageHandlerMetadataName = "ping",
+    messageHandlerMetadataCommands = [],
+    messageHandlerMetadataHandler = pingCommandHandler
+}
 
 pingCommandHandler :: MessageHandler
 pingCommandHandler cIn cOut = forever $ do

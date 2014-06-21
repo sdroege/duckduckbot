@@ -7,6 +7,7 @@ module DuckDuckBot.Types (
     MessageHandler,
     MessageHandlerEnv (..),
     MessageHandlerEnvReader,
+    MessageHandlerMetadata (..),
     module DuckDuckBot.Connection
 ) where
 
@@ -47,3 +48,8 @@ data OutMessage = OutIRCMessage IRC.Message
 
 type MessageHandler = Chan InMessage -> Chan OutMessage -> MessageHandlerEnvReader IO ()
 
+data MessageHandlerMetadata = MessageHandlerMetadata {
+    messageHandlerMetadataName :: String,
+    messageHandlerMetadataCommands :: [String],
+    messageHandlerMetadataHandler :: MessageHandler
+}

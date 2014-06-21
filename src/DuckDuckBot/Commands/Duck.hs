@@ -1,5 +1,5 @@
 module DuckDuckBot.Commands.Duck (
-  duckCommandHandler
+  duckCommandHandlerMetadata
 ) where
 
 import DuckDuckBot.Types
@@ -14,6 +14,13 @@ import Control.Concurrent.Chan
 import qualified Network.IRC as IRC
 
 import System.Random
+
+duckCommandHandlerMetadata :: MessageHandlerMetadata
+duckCommandHandlerMetadata = MessageHandlerMetadata {
+    messageHandlerMetadataName = "duck",
+    messageHandlerMetadataCommands = ["!duck"],
+    messageHandlerMetadataHandler = duckCommandHandler
+}
 
 duckCommandHandler :: MessageHandler
 duckCommandHandler cIn cOut = forever $ do
