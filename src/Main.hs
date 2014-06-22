@@ -2,12 +2,17 @@ module Main (main) where
 
 import DuckDuckBot.Types
 import DuckDuckBot.Config
+import DuckDuckBot.Utils
 
 import DuckDuckBot.Commands.Ping
 import DuckDuckBot.Commands.Duck
 import DuckDuckBot.Commands.Ddg
 
+import Data.Char
+import Data.Maybe
+import Data.List
 import qualified Data.ByteString.UTF8 as UB
+import qualified Data.ByteString as B
 
 import Control.Exception
 import Control.Monad
@@ -66,6 +71,9 @@ run env = do
                                  runReaderT (m mChan outChan) messageHandlerEnv
     mapM_ (liftIO . forkIO . runMessageHandler . messageHandlerMetadataHandler) messageHandlers
 
+    -- Special handler for !help without arguments
+    _ <- liftIO $ forkIO $ runMessageHandler helpCommandHandler
+
     runReaderT (readLoop connection inChan) env
 
 --
@@ -122,4 +130,34 @@ writeLoop chan con = do
         case evMsg of
             Right (OutIRCMessage m) -> liftIO $ putMessageConnection con m
             Left e                  -> liftIO $ print ("Exception in writeLoop: " ++ show e)
+
+
+--
+-- Special handler for the !help command without parameters
+--
+helpCommandHandler :: MessageHandler
+helpCommandHandler cIn cOut = forever $ do
+    msg <- liftIO $ readChan cIn
+    case msg of
+        InIRCMessage m | isHelpCommand m -> handleHelp m
+        _                                -> return ()
+    where
+        isHelpCommand msg = command == "PRIVMSG" && length params == 2 && s == "!help"
+                            where
+                                command = IRC.msg_command msg
+                                params = IRC.msg_params msg
+                                s = head (tail params)
+        handleHelp msg = when (target /= B.empty) $ sendHelp target
+                         where
+                             target = getPrivMsgReplyTarget msg
+        sendHelp target = liftIO $ writeChan cOut (helpMessage target)
+        helpMessage target = OutIRCMessage IRC.Message  {   IRC.msg_prefix = Nothing,
+                                                            IRC.msg_command = "PRIVMSG",
+                                                            IRC.msg_params = [target, helpString]
+                                                        }
+                             where
+                                helpString = UB.fromString $ "Available commands: " ++ commands -- ++ ". Try !help COMMAND"
+                                commands = mapIntercalate (handlerCommands . messageHandlerMetadataCommands) ", " messageHandlers
+                                handlerCommands = mapIntercalate id " | "
+                                mapIntercalate f s l = intercalate s (mapMaybe (\a -> let r = f a in if null (dropWhile isSpace r) then Nothing else Just r) l)
 
