@@ -7,7 +7,8 @@ import DuckDuckBot.Types (Config (..))
 import Data.Maybe
 import System.Environment
 import Control.Monad
-import Control.Exception
+
+import Safe
 
 getConfig :: IO Config
 getConfig = do
@@ -20,13 +21,14 @@ getConfig = do
 
     when (isNothing server) $ error "Need to set server in $DDB_SERVER"
     when (isNothing portString) $ error "Need to set port in $DDB_PORT"
-    port <- handle (\(SomeException _) -> error "Need to set port in $DDB_PORT") $ evaluate (read (fromJust portString) :: Int)
+    let port = readMay (fromJust portString) :: Maybe Int
+    when (isNothing port) $ error "Need to set port in $DDB_PORT"
     when (isNothing nick) $ error "Need to set nickname in $DDB_NICK"
     when (isNothing channel) $ error "Need to set channel in $DDB_CHANNEL"
 
     return Config {
         cfgServer=fromJust server,
-        cfgPort=port,
+        cfgPort=fromJust port,
         cfgNick=fromJust nick,
         cfgNickServPassword=nickServPassword,
         cfgChannel=fromJust channel,
