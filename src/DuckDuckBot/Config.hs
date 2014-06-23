@@ -10,6 +10,17 @@ import Control.Monad
 
 import Safe
 
+#if !MIN_VERSION_base(4,6,0)
+import Control.Exception
+import System.IO.Error(isDoesNotExistError)
+
+lookupEnv :: String -> IO (Maybe String)
+lookupEnv k =
+    let checkException e | isDoesNotExistError e = return Nothing
+                         | otherwise             = throwIO e
+    in handle checkException (getEnv k >>= return . Just)
+#endif
+
 getConfig :: IO Config
 getConfig = do
     server           <- lookupEnv "DDB_SERVER"
