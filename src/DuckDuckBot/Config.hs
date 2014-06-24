@@ -29,6 +29,7 @@ getConfig = do
     nickServPassword <- lookupEnv "DDB_NICKSERV_PASSWORD"
     channel          <- lookupEnv "DDB_CHANNEL"
     useSslString     <- lookupEnv "DDB_USE_SSL"
+    authPassword     <- lookupEnv "DDB_AUTH_PASSWORD"
 
     when (isNothing server) $ error "Need to set server in $DDB_SERVER"
     when (isNothing portString) $ error "Need to set port in $DDB_PORT"
@@ -43,5 +44,6 @@ getConfig = do
         cfgNick=fromJust nick,
         cfgNickServPassword=nickServPassword,
         cfgChannel=fromJust channel,
-        cfgUseSsl=useSslString == Just "1"
+        cfgUseSsl=useSslString == Just "1",
+        cfgAuthPassword=authPassword
     }

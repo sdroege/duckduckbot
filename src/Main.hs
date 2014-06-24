@@ -41,11 +41,14 @@ setup = do
     inChan  <- newChan :: IO (Chan InMessage)
     outChan <- newChan :: IO (Chan OutMessage)
 
+    authUser <- newMVar (Nothing :: Maybe IRC.Prefix)
+
     let env = Env {
         envConfig=config,
         envConnection=connection,
         envInChan=inChan,
-        envOutChan=outChan
+        envOutChan=outChan,
+        envAuthUser=authUser
     }
 
     return env
@@ -59,12 +62,14 @@ run env = do
         inChan = envInChan env
         outChan = envOutChan env
         config = envConfig env
+        authUser = envAuthUser env
 
     _ <- liftIO . forkIO $ runReaderT (writeLoop outChan connection) env
 
     -- Start all message handlers here
     let messageHandlerEnv   = MessageHandlerEnv { messageHandlerEnvNick    = cfgNick config,
-                                                  messageHandlerEnvChannel = cfgChannel config
+                                                  messageHandlerEnvChannel = cfgChannel config,
+                                                  messageHandlerEnvIsAuthUser = isAuthUser authUser
                                                 }
         runMessageHandler m = do
                                  mChan <- dupChan inChan
@@ -73,6 +78,10 @@ run env = do
 
     -- Special handler for !help without arguments
     _ <- liftIO $ forkIO $ runMessageHandler helpCommandHandler
+
+    -- Special handler for !auth
+    when (isJust (cfgAuthPassword config)) $
+        void $ liftIO $ forkIO $ runMessageHandler (authCommandHandler (fromJust (cfgAuthPassword config)) authUser)
 
     runReaderT (readLoop connection inChan) env
 
@@ -160,4 +169,47 @@ helpCommandHandler cIn cOut = forever $ do
                                 commands = mapIntercalate (handlerCommands . messageHandlerMetadataCommands) ", " messageHandlers
                                 handlerCommands = mapIntercalate id " | "
                                 mapIntercalate f s l = intercalate s (mapMaybe (\a -> let r = f a in if null (dropWhile isSpace r) then Nothing else Just r) l)
+
+--
+-- Special handler for the !auth command
+--
+authCommandHandler :: String -> MVar (Maybe IRC.Prefix) -> MessageHandler
+authCommandHandler pw authUser cIn cOut = forever $ do
+    msg <- liftIO $ readChan cIn
+    case msg of
+        InIRCMessage m | isAuthCommand m -> handleAuth m
+        _                                -> return ()
+    where
+        isAuthCommand msg = command == "PRIVMSG" && length params == 2 && "!auth " `B.isPrefixOf` s
+                            where
+                                command = IRC.msg_command msg
+                                params = IRC.msg_params msg
+                                s = head (tail params)
+        handleAuth msg = do
+                            let prefix = IRC.msg_prefix msg
+                                params = IRC.msg_params msg
+                                s = head (tail params)
+                                p = UB.toString (B.drop 6 s)
+
+                            case prefix of
+                                Just (IRC.NickName n _ _) -> if p == pw then
+                                                                liftIO $ swapMVar authUser prefix >> sendAuthMessage n ("Authenticated " `B.append` n)
+                                                             else
+                                                                sendAuthMessage n "Authentication failed"
+
+                                _            -> return ()
+
+
+        sendAuthMessage n m = liftIO $ writeChan cOut (authMessage n m)
+        authMessage n m = OutIRCMessage IRC.Message {   IRC.msg_prefix = Nothing,
+                                                        IRC.msg_command = "NOTICE",
+                                                        IRC.msg_params = [n, m]
+                                                    }
+
+isAuthUser :: MVar (Maybe IRC.Prefix) -> IRC.Prefix -> IO Bool
+isAuthUser m n = do
+    a <- readMVar m
+    case a of
+        Just p -> return (n == p)
+        _      -> return False
 

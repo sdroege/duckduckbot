@@ -17,13 +17,15 @@ import Control.Monad.Reader
 
 import qualified Network.IRC as IRC
 import Control.Concurrent.Chan
+import Control.Concurrent.MVar
 
 type EnvReader = ReaderT Env
 data Env = Env {
     envConfig      :: Config,
     envConnection  :: Connection,
     envInChan      :: Chan InMessage, -- This is duplicated to all message handlers
-    envOutChan     :: Chan OutMessage
+    envOutChan     :: Chan OutMessage,
+    envAuthUser    :: MVar (Maybe IRC.Prefix)
 }
 
 data Config = Config {
@@ -32,13 +34,15 @@ data Config = Config {
     cfgNick             :: String,
     cfgNickServPassword :: Maybe String,
     cfgChannel          :: String,
-    cfgUseSsl           :: Bool
+    cfgUseSsl           :: Bool,
+    cfgAuthPassword     :: Maybe String
 } deriving (Show)
 
 type MessageHandlerEnvReader = ReaderT MessageHandlerEnv
 data MessageHandlerEnv = MessageHandlerEnv {
     messageHandlerEnvNick    :: String,
-    messageHandlerEnvChannel :: String
+    messageHandlerEnvChannel :: String,
+    messageHandlerEnvIsAuthUser :: IRC.Prefix -> IO Bool
 }
 
 -- More messages to be added here if we ever have
