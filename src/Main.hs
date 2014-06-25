@@ -64,7 +64,22 @@ run env = do
         config = envConfig env
         authUser = envAuthUser env
 
-    _ <- liftIO . forkIO $ runReaderT (writeLoop outChan connection) env
+    threads <- newMVar []
+    let forkThread io = do
+                            mvar <- newEmptyMVar
+                            ts   <- takeMVar threads
+                            putMVar threads (mvar:ts)
+                            void (forkFinally io (\_ -> putMVar mvar ()))
+        waitForThreads = do
+                            ts   <- takeMVar threads
+                            case ts of
+                                []    -> return ()
+                                m:ms  -> do
+                                            putMVar threads ms
+                                            takeMVar m
+                                            waitForThreads
+
+    liftIO . forkThread $ runReaderT (writeLoop outChan connection) env
 
     -- Start all message handlers here
     let messageHandlerEnv   = MessageHandlerEnv { messageHandlerEnvNick    = cfgNick config,
@@ -74,24 +89,26 @@ run env = do
         runMessageHandler m = do
                                  mChan <- dupChan inChan
                                  runReaderT (m mChan outChan) messageHandlerEnv
-    mapM_ (liftIO . forkIO . runMessageHandler . messageHandlerMetadataHandler) messageHandlers
+    mapM_ (liftIO . forkThread . runMessageHandler . messageHandlerMetadataHandler) messageHandlers
 
     -- Special handler for !help without arguments
-    _ <- liftIO $ forkIO $ runMessageHandler helpCommandHandler
+    liftIO $ forkThread $ runMessageHandler helpCommandHandler
 
     -- Special handler for !auth
     when (isJust (cfgAuthPassword config)) $
-        void $ liftIO $ forkIO $ runMessageHandler (authCommandHandler (fromJust (cfgAuthPassword config)) authUser)
+        liftIO $ forkThread $ runMessageHandler (authCommandHandler (fromJust (cfgAuthPassword config)) authUser)
 
-    runReaderT (readLoop connection inChan) env
+    runReaderT (readLoop messageHandlerEnv connection inChan outChan) env
+
+    waitForThreads
 
 --
 -- Reads data from the handle, converts them to IRC.Messages
 -- and writes them to the envInChan for all command handlers
 -- to consume them
 --
-readLoop :: Connection -> Chan InMessage -> EnvReader IO ()
-readLoop con chan = runConnectionReader con (messageReader chan)
+readLoop :: MessageHandlerEnv -> Connection -> Chan InMessage -> Chan OutMessage -> EnvReader IO ()
+readLoop env con inChan outChan = runConnectionReader con (messageReader env inChan outChan)
 
 --
 -- Reads IRC messages from the socket and passes them to all
@@ -100,10 +117,31 @@ readLoop con chan = runConnectionReader con (messageReader chan)
 -- We don't catch any exceptions here. If writing to the
 -- connection fails we will stop the application
 --
-messageReader :: Chan InMessage -> ConnectionReader (EnvReader IO) ()
-messageReader chan = forever $ do
+messageReader :: MessageHandlerEnv -> Chan InMessage -> Chan OutMessage -> ConnectionReader (EnvReader IO) ()
+messageReader env inChan outChan = untilFalse $ do
     msg <- getMessage
-    liftIO $ writeChan chan (InIRCMessage msg)
+    liftIO $ writeChan inChan (InIRCMessage msg)
+
+    let isQuitCommand = command == "PRIVMSG" && length params == 2 && s == "!quit"
+                        where
+                            command = IRC.msg_command msg
+                            params = IRC.msg_params msg
+                            s = head (tail params)
+        prefix = IRC.msg_prefix msg
+
+    if isQuitCommand && isJust prefix then
+        do
+            a <- liftIO $ messageHandlerEnvIsAuthUser env (fromJust prefix)
+            if a then
+                do
+                    liftIO $ writeChan inChan Quit
+                    let quitMessage = IRC.Message Nothing "QUIT" []
+                    liftIO $ writeChan outChan (OutIRCMessage quitMessage)
+                    return False
+            else
+                return True
+    else
+        return True
 
 --
 -- Reads Messages from the envOutChan and does whatever
@@ -131,25 +169,32 @@ writeLoop chan con = do
     sendNickServPassword
     sendJoinCommand
 
-    forever $ do
+    untilFalse $ do
         msg <- liftIO $ readChan chan
         -- Catch exceptions that might occur from evaluation
         -- a lazy, non-evaluated message here
         evMsg <- liftIO (try (evaluate msg) :: IO (Either SomeException OutMessage))
         case evMsg of
-            Right (OutIRCMessage m) -> liftIO $ putMessageConnection con m
-            Left e                  -> liftIO $ print ("Exception in writeLoop: " ++ show e)
+            Right (OutIRCMessage m) -> do
+                                            liftIO $ putMessageConnection con m
+                                            case m of
+                                                m' | IRC.msg_command m' == "QUIT" -> return False
+                                                _                                 -> return True
+            Left e                  -> do
+                                            liftIO $ print ("Exception in writeLoop: " ++ show e)
+                                            return True
 
 
 --
 -- Special handler for the !help command without parameters
 --
 helpCommandHandler :: MessageHandler
-helpCommandHandler cIn cOut = forever $ do
+helpCommandHandler cIn cOut = untilFalse $ do
     msg <- liftIO $ readChan cIn
     case msg of
-        InIRCMessage m | isHelpCommand m -> handleHelp m
-        _                                -> return ()
+        InIRCMessage m | isHelpCommand m -> handleHelp m >> return True
+        Quit                             -> return False
+        _                                -> return True
     where
         isHelpCommand msg = command == "PRIVMSG" && length params == 2 && s == "!help"
                             where
@@ -174,11 +219,12 @@ helpCommandHandler cIn cOut = forever $ do
 -- Special handler for the !auth command
 --
 authCommandHandler :: String -> MVar (Maybe IRC.Prefix) -> MessageHandler
-authCommandHandler pw authUser cIn cOut = forever $ do
+authCommandHandler pw authUser cIn cOut = untilFalse $ do
     msg <- liftIO $ readChan cIn
     case msg of
-        InIRCMessage m | isAuthCommand m -> handleAuth m
-        _                                -> return ()
+        InIRCMessage m | isAuthCommand m -> handleAuth m >> return True
+        Quit                             -> return False
+        _                                -> return True
     where
         isAuthCommand msg = command == "PRIVMSG" && length params == 2 && "!auth " `B.isPrefixOf` s
                             where

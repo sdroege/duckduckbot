@@ -23,11 +23,12 @@ duckCommandHandlerMetadata = MessageHandlerMetadata {
 }
 
 duckCommandHandler :: MessageHandler
-duckCommandHandler cIn cOut = forever $ do
+duckCommandHandler cIn cOut = untilFalse $ do
     msg <- liftIO $ readChan cIn
     case msg of
-        InIRCMessage m | isDuckCommand m -> handleDuck m
-        _                                -> return ()
+        InIRCMessage m | isDuckCommand m -> handleDuck m >> return True
+        Quit                             -> return False
+        _                                -> return True
     where
         isDuckCommand = isPrivMsgCommand "duck"
 

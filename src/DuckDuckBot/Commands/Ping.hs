@@ -3,8 +3,8 @@ module DuckDuckBot.Commands.Ping (
 ) where
 
 import DuckDuckBot.Types
+import DuckDuckBot.Utils
 
-import Control.Monad
 import Control.Monad.Reader
 import Control.Concurrent.Chan
 import qualified Network.IRC as IRC
@@ -17,11 +17,12 @@ pingCommandHandlerMetadata = MessageHandlerMetadata {
 }
 
 pingCommandHandler :: MessageHandler
-pingCommandHandler cIn cOut = forever $ do
+pingCommandHandler cIn cOut = untilFalse $ do
     msg <- liftIO $ readChan cIn
     case msg of
-        InIRCMessage m | isPingCommand m -> handlePing m
-        _                                -> return ()
+        InIRCMessage m | isPingCommand m -> handlePing m >> return True
+        Quit                             -> return False
+        _                                -> return True
     where
         isPingCommand msg = command == "PING" && length params <= 2
                             where

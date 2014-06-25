@@ -1,7 +1,10 @@
 module DuckDuckBot.Utils(
     isPrivMsgCommand,
-    getPrivMsgReplyTarget
+    getPrivMsgReplyTarget,
+    untilFalse
 ) where
+
+import Control.Monad (when)
 
 import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as UB
@@ -30,4 +33,7 @@ getPrivMsgReplyTarget msg   | isChannel target  = target
                                                     (Just (IRC.NickName n _ _)) -> n
                                                     _                           -> B.empty
 
-
+untilFalse :: (Monad m) => m Bool -> m ()
+untilFalse p = do
+    x <- p
+    when x $ untilFalse p

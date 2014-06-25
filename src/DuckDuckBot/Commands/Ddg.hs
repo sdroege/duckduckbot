@@ -34,11 +34,12 @@ ddgCommandHandlerMetadata = MessageHandlerMetadata {
 ddgCommandHandler :: MessageHandler
 ddgCommandHandler cIn cOut = do
     manager <- liftIO $ HTTP.newManager HTTPS.tlsManagerSettings
-    forever $ do
+    untilFalse $ do
         msg <- liftIO $ readChan cIn
         case msg of
-            InIRCMessage m | isDdgCommand m  -> handleDdg m manager
-            _                                -> return ()
+            InIRCMessage m | isDdgCommand m  -> handleDdg m manager >> return True
+            Quit                             -> return False
+            _                                -> return True
         where
             isDdgCommand = isPrivMsgCommand "ddg"
 

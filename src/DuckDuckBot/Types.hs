@@ -47,7 +47,7 @@ data MessageHandlerEnv = MessageHandlerEnv {
 
 -- More messages to be added here if we ever have
 -- to tell our command handlers to do anything
-data InMessage  = InIRCMessage IRC.Message
+data InMessage  = InIRCMessage IRC.Message | Quit
 data OutMessage = OutIRCMessage IRC.Message
 
 type MessageHandler = Chan InMessage -> Chan OutMessage -> MessageHandlerEnvReader IO ()
