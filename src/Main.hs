@@ -3,6 +3,7 @@ module Main (main) where
 import DuckDuckBot.Types
 import DuckDuckBot.Config
 import DuckDuckBot.Utils
+import DuckDuckBot.Compat
 
 import DuckDuckBot.Commands.Ping
 import DuckDuckBot.Commands.Duck
