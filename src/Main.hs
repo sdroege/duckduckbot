@@ -240,7 +240,12 @@ authCommandHandler pw authUser cIn cOut = untilFalse $ do
 
                             case prefix of
                                 Just (IRC.NickName n _ _) -> if p == pw then
-                                                                liftIO $ swapMVar authUser prefix >> sendAuthMessage n ("Authenticated " `B.append` n)
+                                                                do
+                                                                    old <- liftIO $ swapMVar authUser prefix
+                                                                    sendAuthMessage n ("Authenticated " `B.append` n)
+                                                                    case old of
+                                                                        Just (IRC.NickName n' _ _) -> sendAuthMessage n' ("Authenticated " `B.append` n)
+                                                                        _                          -> return ()
                                                              else
                                                                 sendAuthMessage n "Authentication failed"
 
