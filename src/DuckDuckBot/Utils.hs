@@ -12,7 +12,7 @@ import qualified Data.ByteString.UTF8 as UB
 import qualified Network.IRC as IRC
 
 isPrivMsgCommand :: B.ByteString -> IRC.Message -> Bool
-isPrivMsgCommand c msg =    command == "PRIVMSG" && length params == 2 && ("!" `B.append` c) `B.isPrefixOf` s
+isPrivMsgCommand c msg =    command == "PRIVMSG" && length params == 2 && (("!" `B.append` c `B.append` " ") `B.isPrefixOf` s || ("!" `B.append` c) == s)
                             where
                                 command = IRC.msg_command msg
                                 params = IRC.msg_params msg
