@@ -40,6 +40,7 @@ data Config = Config {
 
 type MessageHandlerEnvReader = ReaderT MessageHandlerEnv
 data MessageHandlerEnv = MessageHandlerEnv {
+    messageHandlerEnvServer  :: String,
     messageHandlerEnvNick    :: String,
     messageHandlerEnvChannel :: String,
     messageHandlerEnvIsAuthUser :: IRC.Prefix -> IO Bool

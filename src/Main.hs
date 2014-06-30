@@ -8,6 +8,7 @@ import DuckDuckBot.Compat
 import DuckDuckBot.Commands.Ping
 import DuckDuckBot.Commands.Duck
 import DuckDuckBot.Commands.Ddg
+import DuckDuckBot.Commands.Quotes
 
 import Data.Char
 import Data.Maybe
@@ -23,7 +24,7 @@ import Control.Concurrent
 import qualified Network.IRC as IRC
 
 messageHandlers :: [MessageHandlerMetadata]
-messageHandlers = [pingCommandHandlerMetadata, duckCommandHandlerMetadata, ddgCommandHandlerMetadata]
+messageHandlers = [pingCommandHandlerMetadata, duckCommandHandlerMetadata, ddgCommandHandlerMetadata, quotesCommandHandlerMetadata]
 
 -- Run everything. We run the read loop in the main thread
 -- and everything else in other threads.
@@ -83,7 +84,8 @@ run env = do
     liftIO . forkThread $ runReaderT (writeLoop outChan connection) env
 
     -- Start all message handlers here
-    let messageHandlerEnv   = MessageHandlerEnv { messageHandlerEnvNick    = cfgNick config,
+    let messageHandlerEnv   = MessageHandlerEnv { messageHandlerEnvServer  = cfgServer config,
+                                                  messageHandlerEnvNick    = cfgNick config,
                                                   messageHandlerEnvChannel = cfgChannel config,
                                                   messageHandlerEnvIsAuthUser = isAuthUser authUser
                                                 }
