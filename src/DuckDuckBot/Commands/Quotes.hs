@@ -222,7 +222,7 @@ quotesCommandHandler cIn cOut = do
             server <- asks messageHandlerEnvServer
             nick <- asks messageHandlerEnvNick
             channel <- asks messageHandlerEnvChannel
-            let dir = baseDir </> server </> nick </> channel
+            let dir = baseDir </> server </> nick </> channel </> "quotes"
             liftIO $ createDirectoryIfMissing True dir
             return dir
 
