@@ -176,9 +176,10 @@ runQuotesHandler acid cIn cOut =
                                 let cmd = (T.stripStart . T.decodeUtf8With T.lenientDecode . B.drop 11 . parseCommand) m
                                     (author, quote') = T.break isSpace cmd
                                     quote = T.strip quote'
-                                time <- liftIO getCurrentTime
-                                qId <- update' acid (AddQuote time author quote)
-                                sendQuoteMessage target ("Added quote " ++ show qId)
+                                when (author /= T.empty && quote /= T.empty) $ do
+                                    time <- liftIO getCurrentTime
+                                    qId <- update' acid (AddQuote time author quote)
+                                    sendQuoteMessage target ("Added quote " ++ show qId)
                            where
                                 target = getPrivMsgReplyTarget m
 
