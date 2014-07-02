@@ -215,7 +215,7 @@ helpCommandHandler cIn cOut = untilFalse $ do
                              where
                                 helpString = UB.fromString $ "Available commands: " ++ commands -- ++ ". Try !help COMMAND"
                                 commands = mapIntercalate (handlerCommands . messageHandlerMetadataCommands) ", " messageHandlers
-                                handlerCommands = mapIntercalate id " | "
+                                handlerCommands = mapIntercalate id ", "
                                 mapIntercalate f s l = intercalate s (mapMaybe (\a -> let r = f a in if null (dropWhile isSpace r) then Nothing else Just r) l)
 
 --
