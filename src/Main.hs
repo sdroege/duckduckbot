@@ -125,26 +125,20 @@ messageReader env inChan outChan = untilFalse $ do
     msg <- getMessage
     liftIO $ writeChan inChan (InIRCMessage msg)
 
-    let isQuitCommand = command == "PRIVMSG" && length params == 2 && s == "!quit"
-                        where
-                            command = IRC.msg_command msg
-                            params = IRC.msg_params msg
-                            s = head (tail params)
-        prefix = IRC.msg_prefix msg
 
-    if isQuitCommand && isJust prefix then
-        do
-            a <- liftIO $ messageHandlerEnvIsAuthUser env (fromJust prefix)
-            if a then
-                do
-                    liftIO $ writeChan inChan Quit
-                    let quitMessage = IRC.Message Nothing "QUIT" []
-                    liftIO $ writeChan outChan (OutIRCMessage quitMessage)
-                    return False
-            else
-                return True
-    else
-        return True
+    case msg of
+        (IRC.Message (Just prefix) "PRIVMSG" (_:"!quit":[])) -> do
+                                                                    a <- liftIO $ messageHandlerEnvIsAuthUser env prefix
+                                                                    if a then
+                                                                        do
+                                                                            liftIO $ writeChan inChan Quit
+                                                                            let quitMessage = IRC.Message Nothing "QUIT" []
+                                                                            liftIO $ writeChan outChan (OutIRCMessage quitMessage)
+                                                                            return False
+                                                                    else
+                                                                        return True
+
+        _                                                    -> return True
 
 --
 -- Reads Messages from the envOutChan and does whatever
@@ -195,15 +189,10 @@ helpCommandHandler :: MessageHandler
 helpCommandHandler cIn cOut = untilFalse $ do
     msg <- liftIO $ readChan cIn
     case msg of
-        InIRCMessage m | isHelpCommand m -> handleHelp m >> return True
-        Quit                             -> return False
-        _                                -> return True
+        InIRCMessage m@(IRC.Message _ "PRIVMSG" (_:"!help":[])) -> handleHelp m >> return True
+        Quit                                                    -> return False
+        _                                                       -> return True
     where
-        isHelpCommand msg = command == "PRIVMSG" && length params == 2 && s == "!help"
-                            where
-                                command = IRC.msg_command msg
-                                params = IRC.msg_params msg
-                                s = head (tail params)
         handleHelp msg = when (target /= B.empty) $ sendHelp target
                          where
                              target = getPrivMsgReplyTarget msg
@@ -225,33 +214,24 @@ authCommandHandler :: String -> MVar (Maybe IRC.Prefix) -> MessageHandler
 authCommandHandler pw authUser cIn cOut = untilFalse $ do
     msg <- liftIO $ readChan cIn
     case msg of
-        InIRCMessage m | isAuthCommand m -> handleAuth m >> return True
+        InIRCMessage (IRC.Message (Just prefix) "PRIVMSG" (_:s:[])) | "!auth " `B.isPrefixOf` s -> handleAuth prefix s >> return True
         Quit                             -> return False
         _                                -> return True
     where
-        isAuthCommand msg = command == "PRIVMSG" && length params == 2 && "!auth " `B.isPrefixOf` s
-                            where
-                                command = IRC.msg_command msg
-                                params = IRC.msg_params msg
-                                s = head (tail params)
-        handleAuth msg = do
-                            let prefix = IRC.msg_prefix msg
-                                params = IRC.msg_params msg
-                                s = head (tail params)
-                                p = UB.toString (B.drop 6 s)
-
-                            case prefix of
-                                Just (IRC.NickName n _ _) -> if p == pw then
-                                                                do
-                                                                    old <- liftIO $ swapMVar authUser prefix
-                                                                    sendAuthMessage n ("Authenticated " `B.append` n)
-                                                                    case old of
-                                                                        Just (IRC.NickName n' _ _) -> sendAuthMessage n' ("Authenticated " `B.append` n)
-                                                                        _                          -> return ()
+        handleAuth prefix s = do
+                                let p = UB.toString (B.drop 6 s)
+                                case prefix of
+                                    IRC.NickName n _ _ -> if p == pw then
+                                                            do
+                                                                old <- liftIO $ swapMVar authUser (Just prefix)
+                                                                sendAuthMessage n ("Authenticated " `B.append` n)
+                                                                case old of
+                                                                    Just (IRC.NickName n' _ _) -> sendAuthMessage n' ("Authenticated " `B.append` n)
+                                                                    _                          -> return ()
                                                              else
                                                                 sendAuthMessage n "Authentication failed"
 
-                                _            -> return ()
+                                    _                  -> return ()
 
 
         sendAuthMessage n m = liftIO $ writeChan cOut (authMessage n m)

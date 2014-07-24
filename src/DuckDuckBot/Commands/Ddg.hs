@@ -43,15 +43,14 @@ ddgCommandHandler cIn cOut = do
         where
             isDdgCommand = isPrivMsgCommand "ddg"
 
-            handleDdg msg manager = when (target /= B.empty && query /= B.empty) $
-                                        liftIO $ void $ forkIO (handleQuery cOut manager target query)
-                                    where
-                                        target = getPrivMsgReplyTarget msg
-                                        params = IRC.msg_params msg
-                                        s = head (tail params)
-                                        isSpaceB = (== fromIntegral (ord ' '))
-                                        extractQuery = B.dropWhile isSpaceB . B.drop 4
-                                        query = extractQuery s
+            handleDdg msg@(IRC.Message _ _ (_:s:[])) manager = when (target /= B.empty && query /= B.empty) $
+                                                                    liftIO $ void $ forkIO (handleQuery cOut manager target query)
+                                                                where
+                                                                    target = getPrivMsgReplyTarget msg
+                                                                    query = extractQuery s
+                                                                    extractQuery = B.dropWhile isSpaceB . B.drop 4
+                                                                    isSpaceB = (== fromIntegral (ord ' '))
+            handleDdg _ _                                    = return ()
 
 handleQuery :: Chan OutMessage -> HTTP.Manager -> IRC.Parameter -> UB.ByteString -> IO ()
 handleQuery cOut manager target query = do

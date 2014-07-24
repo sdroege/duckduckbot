@@ -20,18 +20,13 @@ pingCommandHandler :: MessageHandler
 pingCommandHandler cIn cOut = untilFalse $ do
     msg <- liftIO $ readChan cIn
     case msg of
-        InIRCMessage m | isPingCommand m -> handlePing m >> return True
-        Quit                             -> return False
-        _                                -> return True
+        InIRCMessage (IRC.Message _ "PING" targets) -> handlePing targets >> return True
+        Quit                                        -> return False
+        _                                           -> return True
     where
-        isPingCommand msg = command == "PING" && length params <= 2
-                            where
-                                command = IRC.msg_command msg
-                                params = IRC.msg_params msg
+        handlePing targets = liftIO $ writeChan cOut (createPong targets)
 
-        handlePing   m = liftIO $ writeChan cOut (pongFromPing m)
-
-        pongFromPing m = OutIRCMessage IRC.Message { IRC.msg_prefix = Nothing,
-                                                     IRC.msg_command = "PONG",
-                                                     IRC.msg_params = IRC.msg_params m
-                                                   }
+        createPong targets = OutIRCMessage IRC.Message { IRC.msg_prefix = Nothing,
+                                                         IRC.msg_command = "PONG",
+                                                         IRC.msg_params = targets
+                                                       }

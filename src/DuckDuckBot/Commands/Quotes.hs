@@ -118,7 +118,7 @@ $(makeAcidic ''Quotes
 getRandomQuoteByAuthor :: MonadIO m => T.Text -> AcidState Quotes -> m (Maybe Quote)
 getRandomQuoteByAuthor author acid = do
     qs <- query' acid (GetQuotesByAuthor author)
-    if qs == [] then
+    if Prelude.null qs then
         return Nothing
     else
         do
@@ -141,17 +141,15 @@ getRandomQuote acid = do
 getQuoteString :: MonadIO m => AcidState Quotes -> T.Text -> m (Maybe (String, String))
 getQuoteString acid author = do
     q <- if author == "" then getRandomQuote acid else getRandomQuoteByAuthor author acid
-    if isJust q then
-        do
-            let q' = fromJust q
-                qId = show (unQuoteId (quoteId q'))
-                author' = quoteAuthor q'
-                time = formatTime defaultTimeLocale "%F %R UTC" (quoteTime q')
-                text = quoteText q'
-                s = "-- Quote " ++ qId ++ ", " ++ T.unpack author' ++ " at " ++ time
-            return (Just (T.unpack text, s))
-    else
-        return Nothing
+    case q of
+        Just q' -> do
+                    let qId = show (unQuoteId (quoteId q'))
+                        author' = quoteAuthor q'
+                        time = formatTime defaultTimeLocale "%F %R UTC" (quoteTime q')
+                        text = quoteText q'
+                        s = "-- Quote " ++ qId ++ ", " ++ T.unpack author' ++ " at " ++ time
+                    return (Just (T.unpack text, s))
+        _       -> return Nothing
 
 runQuotesHandler :: AcidState Quotes -> MessageHandler
 runQuotesHandler acid cIn cOut =
@@ -168,9 +166,8 @@ runQuotesHandler acid cIn cOut =
         isQuoteRmCommand = isPrivMsgCommand "quote-rm"
         isQuoteCommand = isPrivMsgCommand "quote"
 
-        parseCommand m = cmd
-                         where params = IRC.msg_params m
-                               cmd    = head (tail params)
+        parseCommand (IRC.Message _ _ (_:cmd:[])) = cmd
+        parseCommand _                            = B.empty
 
         handleQuoteAdd m = when (target /= B.empty) $ do
                                 let cmd = (T.stripStart . T.decodeUtf8With T.lenientDecode . B.drop 11 . parseCommand) m
