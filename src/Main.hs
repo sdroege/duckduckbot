@@ -186,21 +186,21 @@ writeLoop chan con = do
 -- Special handler for the !help command without parameters
 --
 helpCommandHandler :: MessageHandler
-helpCommandHandler cIn cOut = untilFalse $ do
-    msg <- liftIO $ readChan cIn
+helpCommandHandler = messageHandlerLoop id handleHelpMessage
+
+handleHelpMessage :: IRC.Message -> MessageHandlerSendMessage -> MessageHandlerEnvReader IO ()
+handleHelpMessage msg send =
     case msg of
-        InIRCMessage m@(IRC.Message _ "PRIVMSG" (_:"!help":[])) -> handleHelp m >> return True
-        Quit                                                    -> return False
-        _                                                       -> return True
+        (IRC.Message _ "PRIVMSG" (_:"!help":[])) -> when (target /= B.empty) $ sendHelp target
+                                                        where
+                                                            target = getPrivMsgReplyTarget msg
+        _                                        -> return ()
     where
-        handleHelp msg = when (target /= B.empty) $ sendHelp target
-                         where
-                             target = getPrivMsgReplyTarget msg
-        sendHelp target = liftIO $ writeChan cOut (helpMessage target)
-        helpMessage target = OutIRCMessage IRC.Message  {   IRC.msg_prefix = Nothing,
-                                                            IRC.msg_command = "PRIVMSG",
-                                                            IRC.msg_params = [target, helpString]
-                                                        }
+        sendHelp target = liftIO $ send (helpMessage target)
+        helpMessage target = IRC.Message  {   IRC.msg_prefix = Nothing,
+                                              IRC.msg_command = "PRIVMSG",
+                                              IRC.msg_params = [target, helpString]
+                                          }
                              where
                                 helpString = UB.fromString $ "Available commands: " ++ commands -- ++ ". Try !help COMMAND"
                                 commands = mapIntercalate (handlerCommands . messageHandlerMetadataCommands) ", " messageHandlers
@@ -211,34 +211,31 @@ helpCommandHandler cIn cOut = untilFalse $ do
 -- Special handler for the !auth command
 --
 authCommandHandler :: String -> MVar (Maybe IRC.Prefix) -> MessageHandler
-authCommandHandler pw authUser cIn cOut = untilFalse $ do
-    msg <- liftIO $ readChan cIn
+authCommandHandler pw authUser = messageHandlerLoop id (handleAuthMessage pw authUser)
+
+handleAuthMessage :: String -> MVar (Maybe IRC.Prefix) -> IRC.Message -> MessageHandlerSendMessage -> MessageHandlerEnvReader IO ()
+handleAuthMessage pw authUser msg send =
     case msg of
-        InIRCMessage (IRC.Message (Just prefix) "PRIVMSG" (_:s:[])) | "!auth " `B.isPrefixOf` s -> handleAuth prefix s >> return True
-        Quit                             -> return False
-        _                                -> return True
+        (IRC.Message (Just prefix@(IRC.NickName n _ _)) "PRIVMSG" (_:s:[])) | "!auth " `B.isPrefixOf` s -> handleAuth prefix n s
+        _                                                                          -> return ()
     where
-        handleAuth prefix s = do
-                                let p = UB.toString (B.drop 6 s)
-                                case prefix of
-                                    IRC.NickName n _ _ -> if p == pw then
-                                                            do
-                                                                old <- liftIO $ swapMVar authUser (Just prefix)
-                                                                sendAuthMessage n ("Authenticated " `B.append` n)
-                                                                case old of
-                                                                    Just (IRC.NickName n' _ _) -> sendAuthMessage n' ("Authenticated " `B.append` n)
-                                                                    _                          -> return ()
-                                                             else
-                                                                sendAuthMessage n "Authentication failed"
+        handleAuth prefix n s = do
+                                    let p = UB.toString (B.drop 6 s)
+                                    if p == pw then
+                                        do
+                                            old <- liftIO $ swapMVar authUser (Just prefix)
+                                            sendAuthMessage n ("Authenticated " `B.append` n)
+                                            case old of
+                                                Just (IRC.NickName n' _ _) -> sendAuthMessage n' ("Authenticated " `B.append` n)
+                                                _                          -> return ()
+                                    else
+                                        sendAuthMessage n "Authentication failed"
 
-                                    _                  -> return ()
-
-
-        sendAuthMessage n m = liftIO $ writeChan cOut (authMessage n m)
-        authMessage n m = OutIRCMessage IRC.Message {   IRC.msg_prefix = Nothing,
-                                                        IRC.msg_command = "NOTICE",
-                                                        IRC.msg_params = [n, m]
-                                                    }
+        sendAuthMessage n m = liftIO $ send (authMessage n m)
+        authMessage n m = IRC.Message {   IRC.msg_prefix = Nothing,
+                                          IRC.msg_command = "NOTICE",
+                                          IRC.msg_params = [n, m]
+                                      }
 
 isAuthUser :: MVar (Maybe IRC.Prefix) -> IRC.Prefix -> IO Bool
 isAuthUser m n = do

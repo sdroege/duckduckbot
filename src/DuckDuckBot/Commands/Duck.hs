@@ -10,7 +10,6 @@ import qualified Data.ByteString.UTF8 as UB
 
 import Control.Monad
 import Control.Monad.Reader
-import Control.Concurrent.Chan
 import qualified Network.IRC as IRC
 
 import System.Random
@@ -23,27 +22,28 @@ duckCommandHandlerMetadata = MessageHandlerMetadata {
 }
 
 duckCommandHandler :: MessageHandler
-duckCommandHandler cIn cOut = untilFalse $ do
-    msg <- liftIO $ readChan cIn
+duckCommandHandler = messageHandlerLoop id handleMessage
+
+handleMessage :: IRC.Message -> MessageHandlerSendMessage -> MessageHandlerEnvReader IO ()
+handleMessage msg send =
     case msg of
-        InIRCMessage m | isDuckCommand m -> handleDuck m >> return True
-        Quit                             -> return False
-        _                                -> return True
+        m | isDuckCommand m -> handleDuck m
+        _                   -> return ()
     where
         isDuckCommand = isPrivMsgCommand "duck"
 
-        handleDuck msg = when (target /= B.empty) $ sendDuck target
+        handleDuck m  = when (target /= B.empty) $ sendDuck target
                          where
-                             target = getPrivMsgReplyTarget msg
+                             target = getPrivMsgReplyTarget m
 
         sendDuck target = do
                              d <- liftIO duck
-                             liftIO $ writeChan cOut (duckMessage target (UB.fromString d))
+                             liftIO $ send (duckMessage target (UB.fromString d))
 
-        duckMessage target d = OutIRCMessage IRC.Message { IRC.msg_prefix = Nothing,
-                                                           IRC.msg_command = "PRIVMSG",
-                                                           IRC.msg_params = [target, d]
-                                                         }
+        duckMessage target d = IRC.Message { IRC.msg_prefix = Nothing,
+                                             IRC.msg_command = "PRIVMSG",
+                                             IRC.msg_params = [target, d]
+                                           }
 
 --
 -- The actual duck string creation

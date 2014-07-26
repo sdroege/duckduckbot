@@ -1,10 +1,15 @@
 module DuckDuckBot.Utils(
     isPrivMsgCommand,
     getPrivMsgReplyTarget,
-    untilFalse
+    untilFalse,
+    messageHandlerLoop
 ) where
 
-import Control.Monad (when)
+import DuckDuckBot.Types
+
+import Control.Monad
+import Control.Monad.IO.Class
+import Control.Concurrent
 
 import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as UB
@@ -28,3 +33,14 @@ untilFalse :: (Monad m) => m Bool -> m ()
 untilFalse p = do
     x <- p
     when x $ untilFalse p
+
+messageHandlerLoop :: (MonadIO m) => (m () -> MessageHandlerEnvReader IO ()) -> (IRC.Message -> MessageHandlerSendMessage -> m ()) -> Chan InMessage -> Chan OutMessage -> MessageHandlerEnvReader IO ()
+messageHandlerLoop run handleMessage cIn cOut =
+    run $ do
+        let send m = writeChan cOut (OutIRCMessage m)
+        untilFalse $ do
+            cMsg <- liftIO $ readChan cIn
+            case cMsg of
+                InIRCMessage msg -> handleMessage msg send >> return True
+                Quit             -> return False
+

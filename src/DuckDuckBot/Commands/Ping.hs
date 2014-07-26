@@ -6,7 +6,6 @@ import DuckDuckBot.Types
 import DuckDuckBot.Utils
 
 import Control.Monad.Reader
-import Control.Concurrent.Chan
 import qualified Network.IRC as IRC
 
 pingCommandHandlerMetadata :: MessageHandlerMetadata
@@ -17,16 +16,15 @@ pingCommandHandlerMetadata = MessageHandlerMetadata {
 }
 
 pingCommandHandler :: MessageHandler
-pingCommandHandler cIn cOut = untilFalse $ do
-    msg <- liftIO $ readChan cIn
-    case msg of
-        InIRCMessage (IRC.Message _ "PING" targets) -> handlePing targets >> return True
-        Quit                                        -> return False
-        _                                           -> return True
-    where
-        handlePing targets = liftIO $ writeChan cOut (createPong targets)
+pingCommandHandler = messageHandlerLoop id handleMessage
 
-        createPong targets = OutIRCMessage IRC.Message { IRC.msg_prefix = Nothing,
-                                                         IRC.msg_command = "PONG",
-                                                         IRC.msg_params = targets
-                                                       }
+handleMessage :: IRC.Message -> MessageHandlerSendMessage -> MessageHandlerEnvReader IO ()
+handleMessage msg send =
+    case msg of
+        (IRC.Message _ "PING" targets) -> liftIO $ send (createPong targets)
+        _                              -> return ()
+    where
+        createPong targets = IRC.Message { IRC.msg_prefix = Nothing,
+                                           IRC.msg_command = "PONG",
+                                           IRC.msg_params = targets
+                                         }
