@@ -20,7 +20,6 @@ import qualified Network.IRC as IRC
 
 import Control.Monad
 import Control.Monad.Reader
-import Control.Monad.Trans.Identity
 import Control.Applicative
 import Control.Concurrent
 import Control.Exception
