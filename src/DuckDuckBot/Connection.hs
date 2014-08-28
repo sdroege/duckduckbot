@@ -52,20 +52,27 @@ putMessageConnection c m = do
                         putStrLn ("> " ++ UB.toString s)
         Left e  -> liftIO $ print ("Exception in putMessageConnection: " ++ show e)
 
-type ConnectionReader m = ReaderT Connection m
+type ConnectionReader m = StateT B.ByteString (ReaderT Connection m)
 runConnectionReader :: (MonadIO m) => Connection -> ConnectionReader m a -> m a
-runConnectionReader = flip runReaderT
+runConnectionReader c f = runReaderT (evalStateT f B.empty) c
 
 getMessage :: (MonadIO m) => ConnectionReader m IRC.Message
 getMessage = do
-    c  <- ask
-    r <- liftIO $ parseWith (C.connectionGetChunk (getConnection c)) messagecrlf B.empty
+    c <- ask
+    t <- get
+    r <- liftIO $ parseWith (C.connectionGetChunk (getConnection c)) messagecrlf t
 
     -- If we finished a parse, return the message, otherwise
     -- recurse to try again
     case r of
-        (Done _ msg) -> liftIO $ putStrLn ("< " ++ UB.toString (IRC.encode msg)) >> return msg
-        _            -> getMessage
+        (Done t' msg)    -> do
+                                put t'
+                                liftIO $ putStrLn ("< " ++ UB.toString (IRC.encode msg)) >> return msg
+        (Fail t' _ err)  -> do
+                                liftIO $ putStrLn ("ERROR: Parsing IRC message failed " ++ err)
+                                put t'
+                                getMessage
+        _                -> getMessage
 
 messagecrlf :: Parser IRC.Message
 messagecrlf = liftA3 IRC.Message
