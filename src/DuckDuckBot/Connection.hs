@@ -75,10 +75,11 @@ getMessage = do
         _                -> getMessage
 
 messagecrlf :: Parser IRC.Message
-messagecrlf = liftA3 IRC.Message
+messagecrlf = IRC.Message <$>
                      (optionMaybe (tokenize IRCP.prefix))
-                     IRCP.command
-                     (many (IRCP.spaces >> IRCP.parameter)) <* string "\r\n"
+                     <*> IRCP.command
+                     <*> (many (IRCP.spaces *> IRCP.parameter))
+                     <* (string "\r\n")
     where
         optionMaybe p = option Nothing (Just <$> p)
         tokenize p = p >>= \x -> IRCP.spaces >> return x
