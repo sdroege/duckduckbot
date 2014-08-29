@@ -76,10 +76,9 @@ getMessage = do
 
 messagecrlf :: Parser IRC.Message
 messagecrlf = IRC.Message <$>
-                     (optionMaybe (tokenize IRCP.prefix))
+                     optionMaybe (IRCP.prefix <* IRCP.spaces)
                      <*> IRCP.command
-                     <*> (many (IRCP.spaces *> IRCP.parameter))
-                     <* (string "\r\n")
+                     <*> many (IRCP.spaces *> IRCP.parameter)
+                     <* string "\r\n"
     where
         optionMaybe p = option Nothing (Just <$> p)
-        tokenize p = p >>= \x -> IRCP.spaces >> return x
