@@ -69,7 +69,7 @@ handleLink send manager target link = do
         Just content -> do
             title <- runX (parseHTML content >>> getTitle)
             when (title /= []) $ do
-                let msg = generateMessage (intercalate "\n" title)
+                let msg = generateMessage (head title)
                 send msg
         _            -> return ()
     where
@@ -96,18 +96,19 @@ getContent m url = do
                                     where readChunks' chunks l = do
                                               chunk <- (HTTP.brRead . HTTP.responseBody) resp
                                               if B.null chunk then
-                                                  return $ (Just . B.concat . reverse) chunks
+                                                  return $ combineChunks chunks
                                               else
                                                   do
                                                       let chunks' = chunk : chunks
                                                           l' = l + B.length chunk
 
                                                       if l' > limit then
-                                                          return Nothing
+                                                          return $ combineChunks chunks'
                                                       else
                                                           readChunks' chunks' l'
+                                          combineChunks = Just . B.concat . reverse
 
-        maybeBody <- HTTP.withResponse req m (readChunks (2 * 1024 * 1024))
+        maybeBody <- HTTP.withResponse req m (readChunks (100 * 1024))
 
         return $ fmap UB.toString maybeBody
 
