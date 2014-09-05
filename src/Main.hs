@@ -9,6 +9,7 @@ import DuckDuckBot.Commands.Ping
 import DuckDuckBot.Commands.Duck
 import DuckDuckBot.Commands.Ddg
 import DuckDuckBot.Commands.Quotes
+import DuckDuckBot.Commands.LinkTitle
 
 import Data.Char
 import Data.Maybe
@@ -24,7 +25,7 @@ import Control.Concurrent
 import qualified Network.IRC as IRC
 
 messageHandlers :: [MessageHandlerMetadata]
-messageHandlers = [pingCommandHandlerMetadata, duckCommandHandlerMetadata, ddgCommandHandlerMetadata, quotesCommandHandlerMetadata]
+messageHandlers = [pingCommandHandlerMetadata, duckCommandHandlerMetadata, ddgCommandHandlerMetadata, quotesCommandHandlerMetadata, linkTitleCommandHandlerMetadata]
 
 -- Run everything. We run the read loop in the main thread
 -- and everything else in other threads.
