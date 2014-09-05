@@ -40,6 +40,7 @@ run :: DdgReader (MessageHandlerEnvReader IO) () -> MessageHandlerEnvReader IO (
 run l = do
     manager <- liftIO $ HTTP.newManager HTTPS.tlsManagerSettings
     void $ runReaderT l manager
+    liftIO $ HTTP.closeManager manager
 
 handleMessage :: IRC.Message -> MessageHandlerSendMessage -> DdgReader (MessageHandlerEnvReader IO) ()
 handleMessage msg send = do
@@ -183,5 +184,6 @@ doQuery m s = do
             req  = baseReq { HTTP.requestHeaders=headers }
         resp <- HTTP.httpLbs req m
         let d = decode (HTTP.responseBody resp) :: Maybe Results
+        HTTP.responseClose resp
         return d
 
