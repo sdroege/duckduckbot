@@ -8,7 +8,6 @@ import DuckDuckBot.Utils
 import Data.List
 import Data.Char
 import qualified Data.ByteString as B
-import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.UTF8 as UB
 
 import qualified Network.HTTP.Client as HTTP
@@ -92,8 +91,24 @@ getContent m url = do
         baseReq <- HTTP.parseUrl url
         let headers = (HTTPH.hConnection, "Keep-Alive") : HTTP.requestHeaders baseReq
             req  = baseReq { HTTP.requestHeaders=headers }
-        resp <- HTTP.httpLbs req m
-        let body = (UB.toString . B.concat . BL.toChunks . HTTP.responseBody) resp
-        HTTP.responseClose resp
-        return $ Just body
+
+            readChunks limit resp = readChunks' [] 0
+                                    where readChunks' chunks l = do
+                                              chunk <- (HTTP.brRead . HTTP.responseBody) resp
+                                              if B.null chunk then
+                                                  return $ (Just . B.concat . reverse) chunks
+                                              else
+                                                  do
+                                                      let chunks' = chunk : chunks
+                                                          l' = l + B.length chunk
+
+                                                      if l' > limit then
+                                                          return Nothing
+                                                      else
+                                                          readChunks' chunks' l'
+
+        maybeBody <- HTTP.withResponse req m (readChunks (2 * 1024 * 1024))
+
+        return $ fmap UB.toString maybeBody
+
 
