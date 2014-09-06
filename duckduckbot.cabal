@@ -20,6 +20,7 @@ executable duckduckbot
   ghc-options:         -Wall
   default-extensions:  OverloadedStrings, CPP
   build-depends:       base ==4.*,
+                       MissingH ==1.2.*,
                        mtl ==2.1.*,
                        transformers == 0.3.*,
                        bytestring ==0.10.*,
@@ -45,5 +46,5 @@ executable duckduckbot
                        exceptions == 0.6.*,
                        safecopy ==0.8.*,
                        acid-state ==0.12.*,
-                       hxt ==9.3.*
+                       tagsoup ==0.13.*
   hs-source-dirs:      src

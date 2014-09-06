@@ -7,6 +7,7 @@ import DuckDuckBot.Utils
 
 import Data.List
 import Data.Char
+import Data.String.Utils (strip)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as UB
 
@@ -21,7 +22,8 @@ import Control.Applicative
 import Control.Concurrent
 import Control.Exception
 
-import Text.XML.HXT.Core hiding (when)
+import Text.HTML.TagSoup
+import Text.HTML.TagSoup.Match
 
 import Safe
 
@@ -53,13 +55,13 @@ handleMessage msg send = do
                                                                                                 where
                                                                                                     target = getPrivMsgReplyTarget msg
                                                                                                     link = extractLink s
-                                                                                                    extractLink = headDef "" . filter (isLink) . words . UB.toString
+                                                                                                    extractLink = headDef "" . filter isLink . words . UB.toString
         _                                                                                     -> return ()
     where
         containsLink n n' s = n /= n'' && isLink s'
             where s' = UB.toString s
                   n'' = UB.toString n'
-        isLink s = ("http://" `isInfixOf` s' || "https://" `isInfixOf` s')
+        isLink s = "http://" `isInfixOf` s' || "https://" `isInfixOf` s'
             where s' = map toLower s
 
 handleLink :: MessageHandlerSendMessage -> HTTP.Manager -> B.ByteString -> String -> IO ()
@@ -67,14 +69,18 @@ handleLink send manager target link = do
     maybeContent <- getContent manager link
     case maybeContent of
         Just content -> do
-            title <- runX (parseHTML content >>> getTitle)
-            when (title /= []) $ do
-                let msg = generateMessage (head title)
-                send msg
+            let tags = parseTags content
+            let title = getTitle tags
+            case title of
+                Just s -> send $ generateMessage s
+                _      -> return ()
         _            -> return ()
     where
-        parseHTML = readString [ withParseHTML yes, withWarnings no, withValidate no ]
-        getTitle = getChildren >>> hasName "html" /> hasName "head" /> hasName "title" /> getText
+        getTitle = fmap strip . headDef Nothing . fmap maybeTagText . getTitleBlock . getHeadBlock . getHtmlBlock
+        getBlock name = takeWhile (not . tagCloseNameLit name) . drop 1 . dropWhile (not . tagOpenNameLit name)
+        getHtmlBlock = getBlock "html"
+        getHeadBlock = getBlock "head"
+        getTitleBlock = getBlock "title"
 
         generateMessage title = IRC.Message {  IRC.msg_prefix = Nothing,
                                                IRC.msg_command = "PRIVMSG",
@@ -84,7 +90,7 @@ handleLink send manager target link = do
                                     reply = UB.fromString $ "Title: " ++ title ++ " (" ++ link ++ ")"
 
 getContent :: HTTP.Manager -> String -> IO (Maybe String)
-getContent m url = do
+getContent m url =
     -- Catch all exceptions here and return nothing
     -- Better do nothing than crashing when we can't do the HTTP request
     handle (\(SomeException e) -> print ("Exception while handling link request \"" ++ url ++ "\": " ++ show e) >> return Nothing) $ do
