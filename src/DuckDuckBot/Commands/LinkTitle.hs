@@ -7,9 +7,12 @@ import DuckDuckBot.Utils
 
 import Data.List
 import Data.Char
-import Data.String.Utils (strip)
 import qualified Data.ByteString as B
+import qualified Data.ByteString.Char8 as BC
 import qualified Data.ByteString.UTF8 as UB
+
+import qualified Data.Text as T
+import qualified Data.Text.ICU.Convert as TC
 
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types.Header as HTTPH
@@ -18,6 +21,7 @@ import qualified Network.IRC as IRC
 
 import Control.Monad
 import Control.Monad.Reader
+import Control.Monad.Maybe
 import Control.Applicative
 import Control.Concurrent
 import Control.Exception
@@ -76,7 +80,7 @@ handleLink send manager target link = do
                 _      -> return ()
         _            -> return ()
     where
-        getTitle = fmap strip . headDef Nothing . fmap maybeTagText . getTitleBlock . getHeadBlock . getHtmlBlock
+        getTitle = fmap T.strip . headDef Nothing . fmap maybeTagText . getTitleBlock . getHeadBlock . getHtmlBlock
         getBlock name = takeWhile (not . tagCloseNameLit name) . drop 1 . dropWhile (not . tagOpenNameLit name)
         getHtmlBlock = getBlock "html"
         getHeadBlock = getBlock "head"
@@ -87,35 +91,51 @@ handleLink send manager target link = do
                                                IRC.msg_params = [target, reply]
                                             }
                                 where
-                                    reply = UB.fromString $ "Title: " ++ title ++ " (" ++ link ++ ")"
+                                    reply = UB.fromString $ "Title: " ++ T.unpack title ++ " (" ++ link ++ ")"
 
-getContent :: HTTP.Manager -> String -> IO (Maybe String)
+liftMaybe :: (MonadPlus m) => Maybe a -> MaybeT m a
+liftMaybe = maybe mzero return
+
+getContent :: HTTP.Manager -> String -> IO (Maybe T.Text)
 getContent m url =
     -- Catch all exceptions here and return nothing
     -- Better do nothing than crashing when we can't do the HTTP request
     handle (\(SomeException e) -> print ("Exception while handling link request \"" ++ url ++ "\": " ++ show e) >> return Nothing) $ do
         baseReq <- HTTP.parseUrl url
-        let headers = (HTTPH.hConnection, "Keep-Alive") : HTTP.requestHeaders baseReq
+        let headers = (HTTPH.hConnection, "Keep-Alive") : (HTTPH.hAccept, "text/html") : ("Accept-Charset", "utf8, *") : HTTP.requestHeaders baseReq
             req  = baseReq { HTTP.requestHeaders=headers }
 
-            readChunks limit resp = readChunks' [] 0
-                                    where readChunks' chunks l = do
-                                              chunk <- (HTTP.brRead . HTTP.responseBody) resp
-                                              if B.null chunk then
-                                                  return $ combineChunks chunks
-                                              else
-                                                  do
-                                                      let chunks' = chunk : chunks
-                                                          l' = l + B.length chunk
+            readChunks limit resp = runMaybeT $ do
+                (_, t) <- (liftMaybe . find ((== HTTPH.hContentType) . fst) . HTTP.responseHeaders) resp
+                when (not ("text/html" `B.isPrefixOf` t)) $ fail "No HTML"
+                let t' = (snd . B.breakSubstring "charset=") t
+                    charset = if t' == B.empty then
+                                "utf-8"
+                              else
+                                BC.takeWhile (\a -> a /= ';' && a /= ' ') . B.drop 8 $ t'
+                body <- liftIO $ readChunks' [] 0
+                return (charset, body)
 
-                                                      if l' > limit then
-                                                          return $ combineChunks chunks'
-                                                      else
-                                                          readChunks' chunks' l'
-                                          combineChunks = Just . B.concat . reverse
+                where
+                    readChunks' chunks l = do
+                        chunk <- (HTTP.brRead . HTTP.responseBody) resp
+                        if B.null chunk then
+                            return $ combineChunks chunks
+                        else
+                            do
+                                let chunks' = chunk : chunks
+                                    l' = l + B.length chunk
 
-        maybeBody <- HTTP.withResponse req m (readChunks (100 * 1024))
+                                if l' > limit then
+                                    return $ combineChunks chunks'
+                                else
+                                    readChunks' chunks' l'
+                    combineChunks = Just . B.concat . reverse
 
-        return $ fmap UB.toString maybeBody
-
+        maybeResponse <- HTTP.withResponse req m (readChunks (100 * 1024))
+        case maybeResponse of
+            Nothing              -> return Nothing
+            Just (charset, body) -> do
+                                        conv <- TC.open (UB.toString charset) (Just True)
+                                        return $ fmap (TC.toUnicode conv) body
 
