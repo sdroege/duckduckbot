@@ -3,16 +3,17 @@
 
 name:                duckduckbot
 version:             1
--- synopsis:            
--- description:         
 license:             GPL-3
 license-file:        LICENSE
 author:              Sebastian Dröge
 maintainer:          slomo@coaxion.net
--- copyright:           
 category:            Network
 build-type:          Simple
 cabal-version:       >=1.10
+
+flag network-uri
+   description: Get Network.URI from the network-uri package
+   default: True
 
 executable duckduckbot
   main-is:             Main.hs
@@ -35,7 +36,6 @@ executable duckduckbot
                        random,
                        time,
                        old-locale,
-                       network,
                        connection,
                        irc,
                        http-types,
@@ -49,4 +49,8 @@ executable duckduckbot
                        safecopy,
                        acid-state,
                        tagsoup
+  if flag(network-uri)
+      build-depends: network-uri >= 2.6, network >= 2.6
+  else
+      build-depends: network < 2.6
   hs-source-dirs:      src
