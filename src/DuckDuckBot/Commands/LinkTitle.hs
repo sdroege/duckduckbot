@@ -21,7 +21,7 @@ import qualified Network.IRC as IRC
 
 import Control.Monad
 import Control.Monad.Reader
-import Control.Monad.Maybe
+import Control.Monad.Trans.Maybe
 import Control.Applicative
 import Control.Concurrent
 import Control.Exception
