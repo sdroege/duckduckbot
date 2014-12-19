@@ -18,7 +18,7 @@ flag network-uri
 executable duckduckbot
   main-is:             Main.hs
   default-language:    Haskell2010
-  ghc-options:         -Wall
+  ghc-options:         -Wall -threaded
   default-extensions:  OverloadedStrings, CPP
   build-depends:       base ==4.*,
                        MissingH,
