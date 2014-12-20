@@ -2,13 +2,15 @@ module DuckDuckBot.Utils(
     isPrivMsgCommand,
     getPrivMsgReplyTarget,
     untilFalse,
-    messageHandlerLoop
+    messageHandlerLoop,
+    liftMaybe
 ) where
 
 import DuckDuckBot.Types
 
 import Control.Monad
 import Control.Monad.IO.Class
+import Control.Monad.Trans.Maybe
 import Control.Concurrent
 
 import qualified Data.ByteString as B
@@ -44,3 +46,5 @@ messageHandlerLoop run handleMessage cIn cOut =
                 InIRCMessage msg -> handleMessage msg send >> return True
                 Quit             -> return False
 
+liftMaybe :: (MonadPlus m) => Maybe a -> MaybeT m a
+liftMaybe = maybe mzero return

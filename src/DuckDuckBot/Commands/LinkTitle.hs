@@ -93,9 +93,6 @@ handleLink send manager target link = do
                                 where
                                     reply = UB.fromString $ "Title: " ++ T.unpack title ++ " (" ++ link ++ ")"
 
-liftMaybe :: (MonadPlus m) => Maybe a -> MaybeT m a
-liftMaybe = maybe mzero return
-
 getContent :: HTTP.Manager -> String -> IO (Maybe T.Text)
 getContent m url =
     -- Catch all exceptions here and return nothing
