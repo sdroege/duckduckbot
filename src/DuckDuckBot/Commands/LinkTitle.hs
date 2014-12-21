@@ -67,16 +67,12 @@ handleMessage nick manager outChan m@(IRC.Message (Just (IRC.NickName n _ _)) "P
 handleMessage _ _ _ _ = return ()
 
 handleLink :: Chan OutMessage -> HTTP.Manager -> B.ByteString -> String -> IO ()
-handleLink outChan manager target link = do
-    maybeContent <- getContent manager link
-    case maybeContent of
-        Just content -> do
-            let tags = parseTags content
-            let title = getTitle tags
-            case title of
-                Just s -> writeChan outChan $ OutIRCMessage $ generateMessage s
-                _      -> return ()
-        _              -> return ()
+handleLink outChan manager target link = void $ runMaybeT $ do
+    (Just content) <- liftIO $ getContent manager link
+    let tags = parseTags content
+    title <- liftMaybe $ getTitle tags
+    void $ liftIO $ writeChan outChan $ OutIRCMessage $ generateMessage title
+
     where
         getTitle = fmap T.strip . headDef Nothing . fmap maybeTagText . getTitleBlock . getHeadBlock . getHtmlBlock
         getBlock name = takeWhile (not . tagCloseNameLit name) . drop 1 . dropWhile (not . tagOpenNameLit name)
