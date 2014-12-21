@@ -18,10 +18,13 @@ import Data.List
 import qualified Data.ByteString.UTF8 as UB
 import qualified Data.ByteString as B
 
+import Data.Conduit
+import qualified Data.Conduit.List as CL
+
 import Control.Exception
 import Control.Monad
 import Control.Monad.Reader
-import Control.Concurrent
+import Control.Concurrent hiding (yield)
 
 import qualified Network.IRC as IRC
 
@@ -112,34 +115,28 @@ loop env = do
 -- to consume them
 --
 readLoop :: MessageHandlerEnv -> Connection -> Chan InMessage -> Chan OutMessage -> EnvReader IO ()
-readLoop env con inChan outChan = runConnectionReader con (messageReader env inChan outChan)
+readLoop env con inChan outChan = do
+    sourceIRCConnection con $$ handleIRCMessage =$= sinkChan inChan
 
---
--- Reads IRC messages from the socket and passes them to all
--- the command handler
---
--- We don't catch any exceptions here. If writing to the
--- connection fails we will stop the application
---
-messageReader :: MessageHandlerEnv -> Chan InMessage -> Chan OutMessage -> ConnectionReader (EnvReader IO) ()
-messageReader env inChan outChan = untilFalse $ do
-    msg <- getMessage
-    liftIO $ writeChan inChan (InIRCMessage msg)
+    let quitMessage = IRC.Message Nothing "QUIT" []
+    liftIO $ writeChan outChan (OutIRCMessage quitMessage)
 
+    where
+        handleIRCMessage = do
+            msg <- await
+            case msg of
+                Just m -> do
+                            yield $ InIRCMessage m
+                            q <- shouldQuit m
+                            if q then
+                                void $ yield Quit
+                            else
+                                handleIRCMessage
+                _      -> return ()
 
-    case msg of
-        (IRC.Message (Just prefix) "PRIVMSG" (_:"!quit":[])) -> do
-                                                                    a <- liftIO $ messageHandlerEnvIsAuthUser env prefix
-                                                                    if a then
-                                                                        do
-                                                                            liftIO $ writeChan inChan Quit
-                                                                            let quitMessage = IRC.Message Nothing "QUIT" []
-                                                                            liftIO $ writeChan outChan (OutIRCMessage quitMessage)
-                                                                            return False
-                                                                    else
-                                                                        return True
+        shouldQuit (IRC.Message (Just prefix) "PRIVMSG" (_:"!quit":[])) = liftIO $ messageHandlerEnvIsAuthUser env prefix
+        shouldQuit _                                                    = return False
 
-        _                                                    -> return True
 
 --
 -- Reads Messages from the envOutChan and does whatever
@@ -152,52 +149,49 @@ messageReader env inChan outChan = untilFalse $ do
 writeLoop :: Chan OutMessage -> Connection -> EnvReader IO ()
 writeLoop chan con = do
     config <- asks envConfig
+
     -- Send initial commands
-    let sendNickCommand = write "NICK" [cfgNick config]
-        sendUserCommand = write "USER" [cfgNick config, "0", "*", "duck duck bot"]
-        sendNickServPassword = case config of
-                                    (Config { cfgNickServPassword=Just pw}) -> write "PRIVMSG" ["NickServ", "IDENTIFY " ++ pw]
-                                    _                                       -> return ()
-        sendJoinCommand = write "JOIN" [cfgChannel config]
-        write command params = liftIO $ putMessageConnection con (IRC.Message Nothing command (convertParams params))
-        convertParams = map UB.fromString
+    let initialCommands = map (\(c, p) -> IRC.Message Nothing c (map UB.fromString p)) . catMaybes $
+            [ Just ("NICK", [cfgNick config])
+            , Just ("USER", [cfgNick config, "0", "*", "duck duck bot"])
+            , maybe Nothing (\pw -> Just ("PRIVMSG", ["NickServ", "IDENTIFY " ++ pw])) (cfgNickServPassword config)
+            , Just ("JOIN", [cfgChannel config])
+            ]
+    CL.sourceList initialCommands
+        $$ sinkIRCConnection con
 
-    sendNickCommand
-    sendUserCommand
-    sendNickServPassword
-    sendJoinCommand
+    -- Write all following messages and stop on QUIT
+    sourceChan chan
+        $$ handleOutMessage
+        =$= sinkIRCConnection con
 
-    untilFalse $ do
-        msg <- liftIO $ readChan chan
-        -- Catch exceptions that might occur from evaluation
-        -- a lazy, non-evaluated message here
-        evMsg <- liftIO (try (evaluate msg) :: IO (Either SomeException OutMessage))
-        case evMsg of
-            Right (OutIRCMessage m) -> do
-                                            liftIO $ putMessageConnection con m
-                                            case m of
-                                                m' | IRC.msg_command m' == "QUIT" -> return False
-                                                _                                 -> return True
-            Left e                  -> do
-                                            liftIO $ print ("Exception in writeLoop: " ++ show e)
-                                            return True
-
+    where
+        handleOutMessage = do
+            msg <- await
+            case msg of
+                Just (OutIRCMessage m) -> do
+                                            yield m
+                                            unless (IRC.msg_command m == "QUIT")
+                                                handleOutMessage
+                _                       -> return ()
 
 --
 -- Special handler for the !help command without parameters
 --
 helpCommandHandler :: MessageHandler
-helpCommandHandler = messageHandlerLoop id handleHelpMessage
+helpCommandHandler inChan outChan =
+    sourceChan inChan
+        =$= takeIRCMessage
+        =$= CL.mapMaybe handleHelpCommand
+        $$ CL.map OutIRCMessage
+        =$= sinkChan outChan
 
-handleHelpMessage :: IRC.Message -> MessageHandlerSendMessage -> MessageHandlerEnvReader IO ()
-handleHelpMessage msg send =
-    case msg of
-        (IRC.Message _ "PRIVMSG" (_:"!help":[])) -> when (target /= B.empty) $ sendHelp target
-                                                        where
-                                                            target = getPrivMsgReplyTarget msg
-        _                                        -> return ()
     where
-        sendHelp target = liftIO $ send (helpMessage target)
+        handleHelpCommand m@(IRC.Message _ "PRIVMSG" (_:"!help":[]))
+                                | (Just target) <- maybeGetPrivMsgReplyTarget m
+                                  = Just $ helpMessage target
+        handleHelpCommand _       = Nothing
+
         helpMessage target = IRC.Message  {   IRC.msg_prefix = Nothing,
                                               IRC.msg_command = "PRIVMSG",
                                               IRC.msg_params = [target, helpString]
@@ -212,27 +206,31 @@ handleHelpMessage msg send =
 -- Special handler for the !auth command
 --
 authCommandHandler :: String -> MVar (Maybe IRC.Prefix) -> MessageHandler
-authCommandHandler pw authUser = messageHandlerLoop id (handleAuthMessage pw authUser)
+authCommandHandler pw authUser inChan outChan =
+    sourceChan inChan
+        =$= takeIRCMessage
+        =$= CL.concatMapM handleAuthCommand
+        $$ CL.map OutIRCMessage
+        =$= sinkChan outChan
 
-handleAuthMessage :: String -> MVar (Maybe IRC.Prefix) -> IRC.Message -> MessageHandlerSendMessage -> MessageHandlerEnvReader IO ()
-handleAuthMessage pw authUser msg send =
-    case msg of
-        (IRC.Message (Just prefix@(IRC.NickName n _ _)) "PRIVMSG" (_:s:[])) | "!auth " `B.isPrefixOf` s -> handleAuth prefix n s
-        _                                                                          -> return ()
     where
+        handleAuthCommand (IRC.Message (Just prefix@(IRC.NickName n _ _)) "PRIVMSG" (_:s:[])) | "!auth " `B.isPrefixOf` s = handleAuth prefix n s
+        handleAuthCommand _                                                                                               = return []
+
         handleAuth prefix n s = do
                                     let p = UB.toString (B.drop 6 s)
                                     if p == pw then
                                         do
                                             old <- liftIO $ swapMVar authUser (Just prefix)
-                                            sendAuthMessage n ("Authenticated " `B.append` n)
-                                            case old of
-                                                Just (IRC.NickName n' _ _) -> sendAuthMessage n' ("Authenticated " `B.append` n)
-                                                _                          -> return ()
+                                            return $ catMaybes
+                                                [ Just $ authMessage n ("Authenticated " `B.append` n)
+                                                , case old of
+                                                    Just (IRC.NickName n' _ _) -> Just $ authMessage n' ("Authenticated " `B.append` n)
+                                                    _                          -> Nothing
+                                                ]
                                     else
-                                        sendAuthMessage n "Authentication failed"
+                                        return [authMessage n "Authentication failed"]
 
-        sendAuthMessage n m = liftIO $ send (authMessage n m)
         authMessage n m = IRC.Message {   IRC.msg_prefix = Nothing,
                                           IRC.msg_command = "NOTICE",
                                           IRC.msg_params = [n, m]
@@ -244,5 +242,4 @@ isAuthUser m n = do
     case a of
         Just p -> return (n == p)
         _      -> return False
-
 

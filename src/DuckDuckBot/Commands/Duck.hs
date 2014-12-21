@@ -5,10 +5,11 @@ module DuckDuckBot.Commands.Duck (
 import DuckDuckBot.Types
 import DuckDuckBot.Utils
 
-import qualified Data.ByteString as B
+import Data.Conduit
+import qualified Data.Conduit.List as CL
+
 import qualified Data.ByteString.UTF8 as UB
 
-import Control.Monad
 import Control.Monad.Reader
 import qualified Network.IRC as IRC
 
@@ -22,23 +23,22 @@ duckCommandHandlerMetadata = MessageHandlerMetadata {
 }
 
 duckCommandHandler :: MessageHandler
-duckCommandHandler = messageHandlerLoop id handleMessage
+duckCommandHandler inChan outChan =
+    sourceChan inChan
+        =$= takeIRCMessage
+        =$= CL.filter isDuckCommand
+        =$= CL.mapMaybeM handleDuckCommand
+        $$ CL.map OutIRCMessage
+        =$= sinkChan outChan
 
-handleMessage :: IRC.Message -> MessageHandlerSendMessage -> MessageHandlerEnvReader IO ()
-handleMessage msg send =
-    case msg of
-        m | isDuckCommand m -> handleDuck m
-        _                   -> return ()
     where
         isDuckCommand = isPrivMsgCommand "duck"
 
-        handleDuck m  = when (target /= B.empty) $ sendDuck target
-                         where
-                             target = getPrivMsgReplyTarget m
-
-        sendDuck target = do
-                             d <- liftIO duck
-                             liftIO $ send (duckMessage target (UB.fromString d))
+        handleDuckCommand m | (Just target) <- maybeGetPrivMsgReplyTarget m
+                              = do
+                                  d <- liftIO duck
+                                  return $ Just (duckMessage target (UB.fromString d))
+        handleDuckCommand _   = return Nothing
 
         duckMessage target d = IRC.Message { IRC.msg_prefix = Nothing,
                                              IRC.msg_command = "PRIVMSG",

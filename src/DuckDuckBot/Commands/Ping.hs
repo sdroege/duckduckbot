@@ -5,8 +5,10 @@ module DuckDuckBot.Commands.Ping (
 import DuckDuckBot.Types
 import DuckDuckBot.Utils
 
-import Control.Monad.Reader
 import qualified Network.IRC as IRC
+
+import Data.Conduit
+import qualified Data.Conduit.List as CL
 
 pingCommandHandlerMetadata :: MessageHandlerMetadata
 pingCommandHandlerMetadata = MessageHandlerMetadata {
@@ -16,15 +18,20 @@ pingCommandHandlerMetadata = MessageHandlerMetadata {
 }
 
 pingCommandHandler :: MessageHandler
-pingCommandHandler = messageHandlerLoop id handleMessage
+pingCommandHandler inChan outChan =
+    sourceChan inChan
+        =$= takeIRCMessage
+        =$= CL.mapMaybe handlePingCommand
+        $$ CL.map OutIRCMessage
+        =$= sinkChan outChan
 
-handleMessage :: IRC.Message -> MessageHandlerSendMessage -> MessageHandlerEnvReader IO ()
-handleMessage msg send =
+handlePingCommand :: IRC.Message -> Maybe IRC.Message
+handlePingCommand msg =
     case msg of
-        (IRC.Message _ "PING" targets) -> liftIO $ send (createPong targets)
-        _                              -> return ()
+        (IRC.Message _ "PING" targets) -> Just (pongMessage targets)
+        _                              -> Nothing
     where
-        createPong targets = IRC.Message { IRC.msg_prefix = Nothing,
-                                           IRC.msg_command = "PONG",
-                                           IRC.msg_params = targets
-                                         }
+        pongMessage targets = IRC.Message { IRC.msg_prefix = Nothing,
+                                            IRC.msg_command = "PONG",
+                                            IRC.msg_params = targets
+                                          }

@@ -14,6 +14,9 @@ import qualified Data.ByteString.UTF8 as UB
 import qualified Data.Text as T
 import qualified Data.Text.ICU.Convert as TC
 
+import Data.Conduit
+import qualified Data.Conduit.List as CL
+
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types.Header as HTTPH
 import qualified Network.HTTP.Client.TLS as HTTPS
@@ -22,7 +25,6 @@ import qualified Network.IRC as IRC
 import Control.Monad
 import Control.Monad.Reader
 import Control.Monad.Trans.Maybe
-import Control.Applicative
 import Control.Concurrent
 import Control.Exception
 
@@ -39,46 +41,42 @@ linkTitleCommandHandlerMetadata = MessageHandlerMetadata {
 }
 
 linkTitleCommandHandler :: MessageHandler
-linkTitleCommandHandler = messageHandlerLoop run handleMessage
+linkTitleCommandHandler inChan outChan = do
+    nick <- asks messageHandlerEnvNick
+    liftIO $ HTTP.withManager HTTPS.tlsManagerSettings $ \manager ->
+        sourceChan inChan
+            =$= takeIRCMessage
+            =$= CL.mapM_ (handleMessage nick manager outChan)
+            $$ CL.sinkNull
 
-type LinkTitleReader = ReaderT HTTP.Manager
 
-run :: LinkTitleReader (MessageHandlerEnvReader IO) () -> MessageHandlerEnvReader IO ()
-run l = do
-    manager <- liftIO $ HTTP.newManager HTTPS.tlsManagerSettings
-    void $ runReaderT l manager
-    liftIO $ HTTP.closeManager manager
-
-handleMessage :: IRC.Message -> MessageHandlerSendMessage -> LinkTitleReader (MessageHandlerEnvReader IO) ()
-handleMessage msg send = do
-    manager <- ask
-    nick <- lift $ asks messageHandlerEnvNick
-    case msg of
-        (IRC.Message (Just (IRC.NickName n _ _)) "PRIVMSG" (_:s:[])) | containsLink nick n s -> when (target /= B.empty && link /= empty) $
-                                                                                                    liftIO $ void $ forkIO (handleLink send manager target link)
-                                                                                                where
-                                                                                                    target = getPrivMsgReplyTarget msg
-                                                                                                    link = extractLink s
-                                                                                                    extractLink = headDef "" . filter isLink . words . UB.toString
-        _                                                                                     -> return ()
+handleMessage :: String -> HTTP.Manager -> Chan OutMessage -> IRC.Message -> IO ()
+handleMessage nick manager outChan m@(IRC.Message (Just (IRC.NickName n _ _)) "PRIVMSG" (_:s:[]))
+        | (Just link)   <- extractedLink
+        , (Just target) <- maybeGetPrivMsgReplyTarget m
+        = liftIO $ void $ forkIO (handleLink outChan manager target link)
     where
-        containsLink n n' s = n /= n'' && isLink s'
-            where s' = UB.toString s
-                  n'' = UB.toString n'
-        isLink s = "http://" `isInfixOf` s' || "https://" `isInfixOf` s'
-            where s' = map toLower s
+        extractedLink = if nick /= UB.toString n then
+                            headMay . filter isLink . words . UB.toString $ s
+                        else
+                            Nothing
 
-handleLink :: MessageHandlerSendMessage -> HTTP.Manager -> B.ByteString -> String -> IO ()
-handleLink send manager target link = do
+        isLink w = "http://" `isInfixOf` w' || "https://" `isInfixOf` w'
+            where w' = map toLower w
+
+handleMessage _ _ _ _ = return ()
+
+handleLink :: Chan OutMessage -> HTTP.Manager -> B.ByteString -> String -> IO ()
+handleLink outChan manager target link = do
     maybeContent <- getContent manager link
     case maybeContent of
         Just content -> do
             let tags = parseTags content
             let title = getTitle tags
             case title of
-                Just s -> send $ generateMessage s
+                Just s -> writeChan outChan $ OutIRCMessage $ generateMessage s
                 _      -> return ()
-        _            -> return ()
+        _              -> return ()
     where
         getTitle = fmap T.strip . headDef Nothing . fmap maybeTagText . getTitleBlock . getHeadBlock . getHtmlBlock
         getBlock name = takeWhile (not . tagCloseNameLit name) . drop 1 . dropWhile (not . tagOpenNameLit name)
@@ -104,7 +102,7 @@ getContent m url =
 
             readChunks limit resp = runMaybeT $ do
                 (_, t) <- (liftMaybe . find ((== HTTPH.hContentType) . fst) . HTTP.responseHeaders) resp
-                when (not ("text/html" `B.isPrefixOf` t)) $ fail "No HTML"
+                unless ("text/html" `B.isPrefixOf` t) $ fail "No HTML"
                 let t' = (snd . B.breakSubstring "charset=") t
                     charset = if t' == B.empty then
                                 "utf-8"

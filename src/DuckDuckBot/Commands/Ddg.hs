@@ -11,6 +11,9 @@ import Data.Char
 import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as UB
 
+import Data.Conduit
+import qualified Data.Conduit.List as CL
+
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Client.TLS as HTTPS
 import qualified Network.URI as URI
@@ -28,38 +31,40 @@ ddgCommandHandlerMetadata = MessageHandlerMetadata {
 }
 
 ddgCommandHandler :: MessageHandler
-ddgCommandHandler = messageHandlerLoop run handleMessage
+ddgCommandHandler inChan outChan = liftIO $ HTTP.withManager HTTPS.tlsManagerSettings $ \manager ->
+    sourceChan inChan
+        =$= takeIRCMessage
+        =$= CL.filter isDdgCommand
+        =$= CL.mapM_ (handleDdgCommand manager outChan)
+        $$ CL.sinkNull
 
-type DdgReader = ReaderT HTTP.Manager
-
-run :: DdgReader (MessageHandlerEnvReader IO) () -> MessageHandlerEnvReader IO ()
-run l = do
-    manager <- liftIO $ HTTP.newManager HTTPS.tlsManagerSettings
-    void $ runReaderT l manager
-    liftIO $ HTTP.closeManager manager
-
-handleMessage :: IRC.Message -> MessageHandlerSendMessage -> DdgReader (MessageHandlerEnvReader IO) ()
-handleMessage msg send = do
-    manager <- ask
-    case msg of
-        (IRC.Message _ _ (_:s:[])) | isDdgCommand msg -> when (target /= B.empty && query /= B.empty) $
-                                                            liftIO $ void $ forkIO (handleQuery send manager target query)
-                                                                where
-                                                                    target = getPrivMsgReplyTarget msg
-                                                                    query = extractQuery s
-                                                                    extractQuery = B.dropWhile isSpaceB . B.drop 4
-                                                                    isSpaceB = (== fromIntegral (ord ' '))
-        _                                             -> return ()
     where
         isDdgCommand = isPrivMsgCommand "ddg"
 
-handleQuery :: MessageHandlerSendMessage -> HTTP.Manager -> B.ByteString -> B.ByteString -> IO ()
-handleQuery send manager target query = do
+handleDdgCommand :: MonadIO m => HTTP.Manager -> Chan OutMessage -> IRC.Message -> m ()
+handleDdgCommand manager outChan m
+        | (Just target) <- maybeGetPrivMsgReplyTarget m
+        , (Just query)  <- parseQueryString m
+        = liftIO $ void $ forkIO (handleQuery outChan manager target query)
+    where
+        parseQueryString m' | (_:s:[]) <- IRC.msg_params m'
+                            = case extractQuery s of
+                                q | q == B.empty -> Nothing
+                                  | otherwise    -> Just q
+        parseQueryString _  = Nothing
+
+        extractQuery = B.dropWhile isSpaceB . B.drop 4
+        isSpaceB = (== fromIntegral (ord ' '))
+
+handleDdgCommand _ _ _ = return ()
+
+handleQuery :: Chan OutMessage -> HTTP.Manager -> B.ByteString -> B.ByteString -> IO ()
+handleQuery outChan manager target query = do
     let queryString = UB.toString query
     response <- DQ.query manager queryString
     when (isJust response) $ do
         let answer = generateAnswer queryString (fromJust response)
-        when (answer /= "") $ send (answerMessage (UB.fromString answer))
+        when (answer /= "") $ writeChan outChan (OutIRCMessage $ answerMessage (UB.fromString answer))
     where
         answerMessage answer = IRC.Message {  IRC.msg_prefix = Nothing,
                                               IRC.msg_command = "PRIVMSG",

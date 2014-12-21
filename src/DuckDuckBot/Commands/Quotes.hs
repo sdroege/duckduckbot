@@ -21,11 +21,12 @@ import Data.SafeCopy
 import Data.Data
 import Data.Char
 import Data.Time
-import Data.Maybe
+
+import Data.Conduit
+import qualified Data.Conduit.List as CL
 
 import Safe
 
-import Control.Monad
 import Control.Monad.Reader
 import Control.Monad.State
 import Control.Monad.Catch
@@ -154,71 +155,13 @@ getQuoteString acid author = do
                     return (Just (T.unpack text, s))
         _       -> return Nothing
 
-type QuotesReader = ReaderT (AcidState Quotes)
-
-handleMessage :: IRC.Message -> MessageHandlerSendMessage -> QuotesReader (MessageHandlerEnvReader IO) ()
-handleMessage msg send = do
-    acid <- ask
-    case msg of
-        m | isQuoteAddCommand m -> handleQuoteAdd acid m
-        m | isQuoteRmCommand  m -> handleQuoteRm acid m
-        m | isQuoteCommand    m -> handleQuote acid m
-        _                       -> return ()
-    where
-        isQuoteAddCommand = isPrivMsgCommand "quote-add"
-        isQuoteRmCommand = isPrivMsgCommand "quote-rm"
-        isQuoteCommand = isPrivMsgCommand "quote"
-
-        parseCommand (IRC.Message _ _ (_:cmd:[])) = cmd
-        parseCommand _                            = B.empty
-
-        handleQuoteAdd acid m = when (target /= B.empty) $ do
-                                  let cmd = (T.stripStart . T.decodeUtf8With T.lenientDecode . B.drop 11 . parseCommand) m
-                                      (author, quote') = T.break isSpace cmd
-                                      quote = T.strip quote'
-                                  when (author /= T.empty && quote /= T.empty) $ do
-                                        time <- liftIO getCurrentTime
-                                        qId <- update' acid (AddQuote time author quote)
-                                        sendQuoteMessage target ("Added quote " ++ show qId)
-                                where
-                                    target = getPrivMsgReplyTarget m
-
-        handleQuoteRm acid m = when (target /= B.empty) $ do
-                                    let cmd = (T.strip . T.decodeUtf8With T.lenientDecode . B.drop 10 . parseCommand) m
-                                        qId = (readMay . T.unpack) cmd
-                                    when (isJust qId) $ do
-                                        let qId' = fromJust qId
-                                        _ <- update' acid (RmQuote (QuoteId qId'))
-                                        sendQuoteMessage target ("Removed quote " ++ show qId')
-                                where
-                                    target = getPrivMsgReplyTarget m
-
-        handleQuote acid m  = when (target /= B.empty) $ do
-                                let author = (T.strip . T.decodeUtf8With T.lenientDecode . B.drop 7 . parseCommand) m
-                                q <- getQuoteString acid author
-                                case q of
-                                    Just (s',t')                -> sendQuoteMessage target s' >> sendQuoteMessage target t'
-                                    Nothing | author /= T.empty -> sendQuoteMessage target ("No quote by " ++ T.unpack author)
-                                    _                           -> return ()
-                                where
-                                    target = getPrivMsgReplyTarget m
-
-        sendQuoteMessage target s = liftIO $ send (quoteMessage target (UB.fromString s))
-
-        quoteMessage target s = IRC.Message { IRC.msg_prefix = Nothing,
-                                              IRC.msg_command = "PRIVMSG",
-                                              IRC.msg_params = [target, s]
-                                            }
 
 quotesCommandHandler :: MessageHandler
-quotesCommandHandler = messageHandlerLoop run handleMessage
-
-run :: QuotesReader (MessageHandlerEnvReader IO) () -> MessageHandlerEnvReader IO ()
-run l = do
+quotesCommandHandler inChan outChan = do
     dir <- quotesDbPath
     bracket (liftIO $ openLocalStateFrom dir initialQuotesState)
         (liftIO . createCheckpointAndClose)
-        (runReaderT l)
+        run
     where
         quotesDbPath = do
             baseDir <- liftIO $ getUserDataDir "duckduckbot"
@@ -228,6 +171,66 @@ run l = do
             let dir = baseDir </> server </> nick </> channel </> "quotes"
             liftIO $ createDirectoryIfMissing True dir
             return dir
+        run acid = sourceChan inChan
+                       =$= takeIRCMessage
+                       =$= CL.concatMapM (handleQuoteCommand acid)
+                       $$ CL.map OutIRCMessage
+                       =$= sinkChan outChan
+
+handleQuoteCommand :: MonadIO m => AcidState Quotes -> IRC.Message -> m [IRC.Message]
+
+handleQuoteCommand acid m | isQuoteAddCommand m, (Just target) <- maybeGetPrivMsgReplyTarget m = handleQuoteAdd target
+    where
+        isQuoteAddCommand = isPrivMsgCommand "quote-add"
+
+        handleQuoteAdd target = do
+            let cmd = (T.stripStart . T.decodeUtf8With T.lenientDecode . B.drop 11 . parseCommand) m
+                (author, quote') = T.break isSpace cmd
+                quote = T.strip quote'
+            if author /= T.empty && quote /= T.empty then do
+                time <- liftIO getCurrentTime
+                qId <- update' acid (AddQuote time author quote)
+                return [quoteMessage target (UB.fromString ("Added quote " ++ show qId))]
+            else
+                return []
+
+handleQuoteCommand acid m | isQuoteRmCommand m, (Just target) <- maybeGetPrivMsgReplyTarget m  = handleQuoteRm target
+    where
+        isQuoteRmCommand = isPrivMsgCommand "quote-rm"
+
+        handleQuoteRm target = do
+            let cmd = (T.strip . T.decodeUtf8With T.lenientDecode . B.drop 10 . parseCommand) m
+                qId = (readMay . T.unpack) cmd
+            case qId of
+                (Just qId') -> do
+                                    _ <- update' acid (RmQuote (QuoteId qId'))
+                                    return [quoteMessage target (UB.fromString ("Removed quote " ++ show qId'))]
+                _           -> return []
+
+
+handleQuoteCommand acid m | isQuoteCommand m, (Just target) <- maybeGetPrivMsgReplyTarget m = handleQuote target
+    where
+        isQuoteCommand = isPrivMsgCommand "quote"
+
+        handleQuote target = do
+            let author = (T.strip . T.decodeUtf8With T.lenientDecode . B.drop 7 . parseCommand) m
+            q <- getQuoteString acid author
+            case q of
+                Just (s',t')                -> return [quoteMessage target (UB.fromString s'), quoteMessage target (UB.fromString t')]
+                Nothing | author /= T.empty -> return [quoteMessage target (UB.fromString ("No quote by " ++ T.unpack author))]
+                _                           -> return []
+
+handleQuoteCommand _ _ = return []
+
+parseCommand :: IRC.Message -> B.ByteString
+parseCommand (IRC.Message _ _ (_:cmd:[])) = cmd
+parseCommand _                            = B.empty
+
+quoteMessage :: B.ByteString -> B.ByteString -> IRC.Message
+quoteMessage target s = IRC.Message { IRC.msg_prefix = Nothing,
+                                      IRC.msg_command = "PRIVMSG",
+                                      IRC.msg_params = [target, s]
+                                    }
 
 quotesCommandHandlerMetadata :: MessageHandlerMetadata
 quotesCommandHandlerMetadata = MessageHandlerMetadata {
