@@ -68,7 +68,7 @@ handleMessage _ _ _ _ = return ()
 
 handleLink :: Chan OutMessage -> HTTP.Manager -> B.ByteString -> String -> IO ()
 handleLink outChan manager target link = void $ runMaybeT $ do
-    (Just content) <- liftIO $ getContent manager link
+    content <- liftMaybe <=< liftIO $ getContent manager link
     let tags = parseTags content
     title <- liftMaybe $ getTitle tags
     void $ liftIO $ writeChan outChan $ OutIRCMessage $ generateMessage title
@@ -91,42 +91,41 @@ getContent :: HTTP.Manager -> String -> IO (Maybe T.Text)
 getContent m url =
     -- Catch all exceptions here and return nothing
     -- Better do nothing than crashing when we can't do the HTTP request
-    handle (\(SomeException e) -> print ("Exception while handling link request \"" ++ url ++ "\": " ++ show e) >> return Nothing) $ do
+    handle (\(SomeException e) -> print ("Exception while handling link request \"" ++ url ++ "\": " ++ show e) >> return Nothing) $ runMaybeT $ do
         baseReq <- HTTP.parseUrl url
         let headers = (HTTPH.hConnection, "Keep-Alive") : (HTTPH.hAccept, "text/html") : ("Accept-Charset", "utf8, *") : ("Accept-Language", "en, *;q=0.1") : HTTP.requestHeaders baseReq
             req  = baseReq { HTTP.requestHeaders=headers }
 
-            readChunks limit resp = runMaybeT $ do
-                (_, t) <- (liftMaybe . find ((== HTTPH.hContentType) . fst) . HTTP.responseHeaders) resp
-                unless ("text/html" `B.isPrefixOf` t) $ fail "No HTML"
-                let t' = (snd . B.breakSubstring "charset=") t
-                    charset = if t' == B.empty then
-                                "utf-8"
-                              else
-                                BC.takeWhile (\a -> a /= ';' && a /= ' ') . B.drop 8 $ t'
-                body <- liftIO $ readChunks' [] 0
-                return (charset, body)
+        (charset, body) <- liftMaybe <=< liftIO $ HTTP.withResponse req m (readChunks (100 * 1024))
+        conv <- liftIO $ TC.open (UB.toString charset) (Just True)
 
-                where
-                    readChunks' chunks l = do
-                        chunk <- (HTTP.brRead . HTTP.responseBody) resp
-                        if B.null chunk then
-                            return $ combineChunks chunks
-                        else
-                            do
-                                let chunks' = chunk : chunks
-                                    l' = l + B.length chunk
+        return $ TC.toUnicode conv body
 
-                                if l' > limit then
-                                    return $ combineChunks chunks'
-                                else
-                                    readChunks' chunks' l'
-                    combineChunks = Just . B.concat . reverse
+readChunks :: Int -> HTTP.Response HTTP.BodyReader -> IO (Maybe (B.ByteString, B.ByteString))
+readChunks limit resp = runMaybeT $ do
+    (_, t) <- (liftMaybe . find ((== HTTPH.hContentType) . fst) . HTTP.responseHeaders) resp
+    unless ("text/html" `B.isPrefixOf` t) $ fail "No HTML"
 
-        maybeResponse <- HTTP.withResponse req m (readChunks (100 * 1024))
-        case maybeResponse of
-            Nothing              -> return Nothing
-            Just (charset, body) -> do
-                                        conv <- TC.open (UB.toString charset) (Just True)
-                                        return $ fmap (TC.toUnicode conv) body
+    let t' = (snd . B.breakSubstring "charset=") t
+        charset = if t' == B.empty then
+                    "utf-8"
+                  else
+                    BC.takeWhile (\a -> a /= ';' && a /= ' ') . B.drop 8 $ t'
 
+    body <- liftMaybe <=< liftIO $ readChunks' [] 0
+    return (charset, body)
+
+    where
+        readChunks' chunks l = do
+            chunk <- (HTTP.brRead . HTTP.responseBody) resp
+            if B.null chunk then
+                return $ combineChunks chunks
+            else do
+                let chunks' = chunk : chunks
+                    l' = l + B.length chunk
+                if l' > limit then
+                    return $ combineChunks chunks'
+                else
+                    readChunks' chunks' l'
+
+        combineChunks = Just . B.concat . reverse
