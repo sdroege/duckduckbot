@@ -6,7 +6,6 @@ import DuckDuckBot.Types
 import DuckDuckBot.Utils
 import qualified DuckDuckBot.Commands.DdgQuery as DQ
 
-import Data.Maybe
 import Data.Char
 import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as UB
@@ -22,6 +21,7 @@ import qualified Network.IRC as IRC
 import Control.Monad
 import Control.Monad.Reader
 import Control.Concurrent
+import Control.Monad.Trans.Maybe
 
 ddgCommandHandlerMetadata :: MessageHandlerMetadata
 ddgCommandHandlerMetadata = MessageHandlerMetadata {
@@ -59,26 +59,28 @@ handleDdgCommand manager outChan m
 handleDdgCommand _ _ _ = return ()
 
 handleQuery :: Chan OutMessage -> HTTP.Manager -> B.ByteString -> B.ByteString -> IO ()
-handleQuery outChan manager target query = do
+handleQuery outChan manager target query = void $ runMaybeT $ do
     let queryString = UB.toString query
-    response <- DQ.query manager queryString
-    when (isJust response) $ do
-        let answer = generateAnswer queryString (fromJust response)
-        when (answer /= "") $ writeChan outChan (OutIRCMessage $ answerMessage (UB.fromString answer))
+    response <- liftMaybe <=< liftIO $ DQ.query manager queryString
+
+    answer <- liftMaybe $ generateAnswer queryString response
+    liftIO $ writeChan outChan (OutIRCMessage $ answerMessage (UB.fromString answer))
+
     where
         answerMessage answer = IRC.Message {  IRC.msg_prefix = Nothing,
                                               IRC.msg_command = "PRIVMSG",
                                               IRC.msg_params = [target, answer]
                                            }
 
-generateAnswer :: String -> DQ.Results -> String
-generateAnswer q r = take n a ++ dots ++ take m b
-                        where
-                            maxIRCLen = 400 -- arbitrary number below 512 to allow some space for channel, prefix, etc
-                            (a, b) = generateAnswer' q r
-                            m = min maxIRCLen (length b)
-                            n = max 0 (maxIRCLen-m)
-                            dots = if n < length a then "..." else ""
+generateAnswer :: String -> DQ.Results -> Maybe String
+generateAnswer q r = if null answer then Nothing else Just answer
+    where
+        answer = take n a ++ dots ++ take m b
+        maxIRCLen = 400 -- arbitrary number below 512 to allow some space for channel, prefix, etc
+        (a, b) = generateAnswer' q r
+        m = min maxIRCLen (length b)
+        n = max 0 (maxIRCLen-m)
+        dots = if n < length a then "..." else ""
 
 generateAnswer' :: String -> DQ.Results -> (String, String)
 generateAnswer' q r | DQ.resultsAnswer r /= ""                          = (DQ.resultsAnswer r, " (http://ddg.gg/" ++ escapedQuery ++ ")")
@@ -92,5 +94,6 @@ generateAnswer' q r | DQ.resultsAnswer r /= ""                          = (DQ.re
                      firstResultText ((DQ.Result { DQ.resultText=rt }):_) = rt
                      firstResultText (_:rs)                               = firstResultText rs
                      firstResultText _                                    = ""
+
                      escapedQuery                                         = URI.escapeURIString URI.isUnescapedInURIComponent q
 

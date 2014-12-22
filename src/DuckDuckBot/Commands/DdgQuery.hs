@@ -105,7 +105,7 @@ query m s = do
         let headers = (HTTPH.hConnection, "Keep-Alive") : HTTP.requestHeaders baseReq
             req  = baseReq { HTTP.requestHeaders=headers }
         resp <- HTTP.httpLbs req m
-        let d = decode (HTTP.responseBody resp) :: Maybe Results
+        let d = decode (HTTP.responseBody resp)
         HTTP.responseClose resp
         return d
 
