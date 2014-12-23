@@ -24,6 +24,7 @@ executable duckduckbot
                        MissingH,
                        transformers,
                        mtl,
+                       async,
                        bytestring,
                        text,
                        text-icu,

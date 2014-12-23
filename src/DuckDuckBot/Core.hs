@@ -21,10 +21,11 @@ import qualified Data.ByteString as B
 import Data.Conduit
 import qualified Data.Conduit.List as CL
 
-import Control.Exception
+import Control.Monad.Catch
 import Control.Monad
 import Control.Monad.Reader
 import Control.Concurrent hiding (yield)
+import Control.Concurrent.Async
 
 import qualified Network.IRC as IRC
 
@@ -70,23 +71,6 @@ loop env = do
         config = envConfig env
         authUser = envAuthUser env
 
-    threads <- newMVar []
-    let forkThread io = do
-                            mvar <- newEmptyMVar
-                            ts   <- takeMVar threads
-                            putMVar threads (mvar:ts)
-                            void (forkFinally io (\_ -> putMVar mvar ()))
-        waitForThreads = do
-                            ts   <- takeMVar threads
-                            case ts of
-                                []    -> return ()
-                                m:ms  -> do
-                                            putMVar threads ms
-                                            takeMVar m
-                                            waitForThreads
-
-    liftIO . forkThread $ runReaderT (writeLoop outChan connection) env
-
     -- Start all message handlers here
     let messageHandlerEnv   = MessageHandlerEnv { messageHandlerEnvServer  = cfgServer config,
                                                   messageHandlerEnvNick    = cfgNick config,
@@ -94,32 +78,37 @@ loop env = do
                                                   messageHandlerEnvIsAuthUser = isAuthUser authUser
                                                 }
         runMessageHandler m = do
-                                 mChan <- dupChan inChan
-                                 runReaderT (m mChan outChan) messageHandlerEnv
-    mapM_ (liftIO . forkThread . runMessageHandler . messageHandlerMetadataHandler) messageHandlers
+            mChan <- dupChan inChan
+            runReaderT (m mChan outChan) messageHandlerEnv
 
-    -- Special handler for !help without arguments
-    liftIO $ forkThread $ runMessageHandler helpCommandHandler
+        allHandlers = helpCommandHandler
+            :  maybeToList (maybe Nothing (Just . authCommandHandler authUser) (cfgAuthPassword config))
+            ++ map messageHandlerMetadataHandler messageHandlers
 
-    -- Special handler for !auth
-    when (isJust (cfgAuthPassword config)) $
-        liftIO $ forkThread $ runMessageHandler (authCommandHandler (fromJust (cfgAuthPassword config)) authUser)
+    writerThread <- liftIO . async . runReaderT (writeLoop outChan connection) $ env
 
-    runReaderT (readLoop messageHandlerEnv connection inChan outChan) env
+    bracket (mapM (liftIO . async . runMessageHandler) allHandlers)
+        (\threads -> mapM_ (liftIO . cancel) threads >> liftIO (cancel writerThread))
+        $ \threads -> do
+            liftIO $ link writerThread
+            mapM_ (liftIO . link) threads
 
-    waitForThreads
+            runReaderT (readLoop messageHandlerEnv connection inChan) env
+            mapM_ wait threads
+
+            let quitMessage = IRC.Message Nothing "QUIT" []
+            liftIO $ writeChan outChan (OutIRCMessage quitMessage)
+
+            wait writerThread
 
 --
 -- Reads data from the handle, converts them to IRC.Messages
 -- and writes them to the envInChan for all command handlers
 -- to consume them
 --
-readLoop :: MessageHandlerEnv -> Connection -> Chan InMessage -> Chan OutMessage -> EnvReader IO ()
-readLoop env con inChan outChan = do
+readLoop :: MessageHandlerEnv -> Connection -> Chan InMessage -> EnvReader IO ()
+readLoop env con inChan = do
     sourceIRCConnection con $$ handleIRCMessage =$= sinkChan inChan
-
-    let quitMessage = IRC.Message Nothing "QUIT" []
-    liftIO $ writeChan outChan (OutIRCMessage quitMessage)
 
     where
         handleIRCMessage = do
@@ -205,8 +194,8 @@ helpCommandHandler inChan outChan =
 --
 -- Special handler for the !auth command
 --
-authCommandHandler :: String -> MVar (Maybe IRC.Prefix) -> MessageHandler
-authCommandHandler pw authUser inChan outChan =
+authCommandHandler :: MVar (Maybe IRC.Prefix) -> String -> MessageHandler
+authCommandHandler authUser pw inChan outChan =
     sourceChan inChan
         =$= takeIRCMessage
         =$= CL.concatMapM handleAuthCommand

@@ -21,6 +21,7 @@ import qualified Network.IRC as IRC
 import Control.Monad
 import Control.Monad.Reader
 import Control.Concurrent
+import Control.Concurrent.Async
 import Control.Monad.Trans.Maybe
 
 ddgCommandHandlerMetadata :: MessageHandlerMetadata
@@ -45,7 +46,7 @@ handleDdgCommand :: MonadIO m => HTTP.Manager -> Chan OutMessage -> IRC.Message 
 handleDdgCommand manager outChan m
         | (Just target) <- maybeGetPrivMsgReplyTarget m
         , (Just query)  <- parseQueryString m
-        = liftIO $ void $ forkIO (handleQuery outChan manager target query)
+        = liftIO $ void $ async (handleQuery outChan manager target query)
     where
         parseQueryString m' | (_:s:[]) <- IRC.msg_params m'
                             = case extractQuery s of

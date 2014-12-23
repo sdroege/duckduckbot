@@ -26,6 +26,7 @@ import Control.Monad
 import Control.Monad.Reader
 import Control.Monad.Trans.Maybe
 import Control.Concurrent
+import Control.Concurrent.Async hiding (link)
 import Control.Exception
 
 import Text.HTML.TagSoup
@@ -54,7 +55,7 @@ handleMessage :: String -> HTTP.Manager -> Chan OutMessage -> IRC.Message -> IO 
 handleMessage nick manager outChan m@(IRC.Message (Just (IRC.NickName n _ _)) "PRIVMSG" (_:s:[]))
         | (Just link)   <- extractedLink
         , (Just target) <- maybeGetPrivMsgReplyTarget m
-        = liftIO $ void $ forkIO (handleLink outChan manager target link)
+        = liftIO $ void $ async (handleLink outChan manager target link)
     where
         extractedLink = if nick /= UB.toString n then
                             headMay . filter isLink . words . UB.toString $ s
