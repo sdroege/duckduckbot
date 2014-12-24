@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveDataTypeable #-}
 module DuckDuckBot.Commands.Ping (
   pingCommandHandlerMetadata
 ) where
@@ -12,7 +11,6 @@ import Data.Conduit
 import qualified Data.Conduit.List as CL
 
 import Data.Time.Clock
-import Data.Typeable
 
 import Control.Monad
 import Control.Concurrent
@@ -76,10 +74,4 @@ checkTimeout serverName lastMessageTime outChan = forever $ do
         Just s' | diff > 300 -> throwIO TimeoutException
                 | diff > 120 -> writeChan outChan $ OutIRCMessage (IRC.Message Nothing "PING" [s'])
                 | otherwise  -> checkTimeout serverName lastMessageTime outChan
-
-
-data TimeoutException = TimeoutException
-    deriving (Typeable, Show)
-
-instance Exception TimeoutException
 

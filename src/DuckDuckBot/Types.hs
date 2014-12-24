@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveDataTypeable #-}
+
 module DuckDuckBot.Types (
     Env (..),
     EnvReader,
@@ -9,6 +11,7 @@ module DuckDuckBot.Types (
     MessageHandlerEnvReader,
     MessageHandlerSendMessage,
     MessageHandlerMetadata (..),
+    TimeoutException(..),
     module DuckDuckBot.Connection
 ) where
 
@@ -19,6 +22,9 @@ import Control.Monad.Reader
 import qualified Network.IRC as IRC
 import Control.Concurrent.Chan
 import Control.Concurrent.MVar
+
+import Data.Typeable
+import Control.Exception
 
 type EnvReader = ReaderT Env
 data Env = Env {
@@ -62,3 +68,9 @@ data MessageHandlerMetadata = MessageHandlerMetadata {
     messageHandlerMetadataCommands :: [String],
     messageHandlerMetadataHandler :: MessageHandler
 }
+
+data TimeoutException = TimeoutException
+    deriving (Typeable, Show)
+
+instance Exception TimeoutException
+
