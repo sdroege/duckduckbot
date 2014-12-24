@@ -92,7 +92,7 @@ getContent :: HTTP.Manager -> String -> IO (Maybe T.Text)
 getContent m url =
     -- Catch all exceptions here and return nothing
     -- Better do nothing than crashing when we can't do the HTTP request
-    handle (\(SomeException e) -> print ("Exception while handling link request \"" ++ url ++ "\": " ++ show e) >> return Nothing) $ runMaybeT $ do
+    handle (\(SomeException e) -> putStrLn ("Exception while handling link request \"" ++ url ++ "\": " ++ show e) >> return Nothing) $ runMaybeT $ do
         baseReq <- HTTP.parseUrl url
         let headers = (HTTPH.hConnection, "Keep-Alive") : (HTTPH.hAccept, "text/html") : ("Accept-Charset", "utf8, *") : ("Accept-Language", "en, *;q=0.1") : HTTP.requestHeaders baseReq
             req  = baseReq { HTTP.requestHeaders=headers }

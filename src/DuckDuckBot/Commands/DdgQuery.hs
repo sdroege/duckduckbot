@@ -100,7 +100,7 @@ query m s = do
         url = "https://api.duckduckgo.com/?q=" ++ q ++ "&format=json&no_redirect=1&t=ddb&no_html=1"
     -- Catch all exceptions here and return nothing
     -- Better do nothing than crashing when we can't do the HTTP request
-    handle (\(SomeException e) -> print ("Exception while handling Ddg request \"" ++ s ++ "\": " ++ show e) >> return Nothing) $ do
+    handle (\(SomeException e) -> putStrLn ("Exception while handling Ddg request \"" ++ s ++ "\": " ++ show e) >> return Nothing) $ do
         baseReq <- HTTP.parseUrl url
         let headers = (HTTPH.hConnection, "Keep-Alive") : HTTP.requestHeaders baseReq
             req  = baseReq { HTTP.requestHeaders=headers }
