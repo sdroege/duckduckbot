@@ -17,7 +17,7 @@ main = do
     runUntilQuit config
 
     where
-        runUntilQuit config = do
+        runUntilQuit config =
             catches (async (run config) >>= wait)
                 [ Handler (\(e :: IOException)      -> retry e config)
                 , Handler (\(e :: TimeoutException) -> retry e config)

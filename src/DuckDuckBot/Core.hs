@@ -82,7 +82,7 @@ loop env = do
             runReaderT (m mChan outChan) messageHandlerEnv
 
         allHandlers = helpCommandHandler
-            :  maybeToList (maybe Nothing (Just . authCommandHandler authUser) (cfgAuthPassword config))
+            :  maybeToList (fmap (authCommandHandler authUser) (cfgAuthPassword config))
             ++ map messageHandlerMetadataHandler messageHandlers
 
     writerThread <- liftIO . async . runReaderT (writeLoop outChan connection) $ env
@@ -107,7 +107,7 @@ loop env = do
 -- to consume them
 --
 readLoop :: MessageHandlerEnv -> Connection -> Chan InMessage -> EnvReader IO ()
-readLoop env con inChan = do
+readLoop env con inChan =
     sourceIRCConnection con $$ handleIRCMessage =$= sinkChan inChan
 
     where

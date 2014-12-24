@@ -29,9 +29,9 @@ pingCommandHandlerMetadata = MessageHandlerMetadata {
 
 pingCommandHandler :: MessageHandler
 pingCommandHandler inChan outChan = do
-    currentTime <- liftIO $ getCurrentTime
+    currentTime <- liftIO getCurrentTime
     lastMessageTime <- liftIO $ newMVar currentTime
-    serverName <- liftIO $ (newMVar Nothing :: IO (MVar (Maybe IRC.ServerName)))
+    serverName <- liftIO (newMVar Nothing :: IO (MVar (Maybe IRC.ServerName)))
 
     liftIO $ bracket (async $ checkTimeout serverName lastMessageTime outChan) cancel $ \a -> do
         link a
@@ -44,7 +44,7 @@ pingCommandHandler inChan outChan = do
 
 handlePingCommand :: MVar (Maybe IRC.ServerName) -> MVar UTCTime -> IRC.Message -> IO (Maybe IRC.Message)
 handlePingCommand serverName lastMessageTime msg = do
-    liftIO $ modifyMVar_ lastMessageTime (\_ -> getCurrentTime)
+    liftIO $ modifyMVar_ lastMessageTime (const getCurrentTime)
 
     case msg of
         (IRC.Message (Just (IRC.Server name)) _ _) -> modifyMVar_ serverName (\_ -> return . Just $ name)
@@ -59,7 +59,7 @@ handlePingCommand serverName lastMessageTime msg = do
                                             IRC.msg_params = targets
                                           }
 
-checkTimeout :: MVar (Maybe IRC.ServerName) -> MVar (UTCTime) -> Chan OutMessage -> IO ()
+checkTimeout :: MVar (Maybe IRC.ServerName) -> MVar UTCTime -> Chan OutMessage -> IO ()
 checkTimeout serverName lastMessageTime outChan = forever $ do
     threadDelay 30000000
 
