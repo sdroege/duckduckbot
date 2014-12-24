@@ -39,9 +39,7 @@ import System.Environment.XDG.BaseDir
 import System.Locale
 
 newtype QuoteId = QuoteId { unQuoteId :: Integer }
-    deriving (Eq, Ord, Data, Enum, Typeable)
-
-$(deriveSafeCopy 0 'base ''QuoteId)
+    deriving (Eq, Ord, Data, Enum, Typeable, SafeCopy)
 
 data Quote = Quote {
     quoteId :: QuoteId,
@@ -53,9 +51,7 @@ data Quote = Quote {
 $(deriveSafeCopy 0 'base ''Quote)
 
 newtype Author = Author T.Text
-    deriving (Eq, Ord, Data, Typeable)
-
-$(deriveSafeCopy 0 'base ''Author)
+    deriving (Eq, Ord, Data, Typeable, SafeCopy)
 
 instance Indexable Quote where
     empty = ixSet
