@@ -38,52 +38,21 @@ import System.Directory
 import System.Environment.XDG.BaseDir
 import System.Locale
 
-newtype QuoteId_v0 = QuoteId_v0 { unQuoteId_v0 :: Integer }
-    deriving (Eq, Ord, Data, Enum, Typeable, SafeCopy)
-
 newtype QuoteId = QuoteId { unQuoteId :: Integer }
     deriving (Eq, Ord, Data, Enum, Typeable)
-$(deriveSafeCopy 1 'extension ''QuoteId)
-
-instance Migrate QuoteId where
-    type MigrateFrom QuoteId = QuoteId_v0
-    migrate (QuoteId_v0 i) = QuoteId i
-
-newtype Author_v0 = Author_v0 T.Text
-    deriving (Eq, Ord, Data, Typeable, SafeCopy)
+$(deriveSafeCopy 1 'base ''QuoteId)
 
 newtype QuoteAuthor = QuoteAuthor {unQuoteAuthor :: T.Text}
     deriving (Eq, Ord, Data, Typeable)
-$(deriveSafeCopy 1 'extension ''QuoteAuthor)
-
-instance Migrate QuoteAuthor where
-    type MigrateFrom QuoteAuthor = Author_v0
-    migrate (Author_v0 a) = QuoteAuthor a
+$(deriveSafeCopy 1 'base ''QuoteAuthor)
 
 newtype QuoteTime = QuoteTime {unQuoteTime :: UTCTime}
     deriving (Eq, Ord, Data, Typeable)
-$(deriveSafeCopy 1 'extension ''QuoteTime)
-
-instance Migrate QuoteTime where
-    type MigrateFrom QuoteTime = UTCTime
-    migrate t = QuoteTime t
+$(deriveSafeCopy 1 'base ''QuoteTime)
 
 newtype QuoteText = QuoteText {unQuoteText :: T.Text}
     deriving (Eq, Ord, Data, Typeable)
-$(deriveSafeCopy 1 'extension ''QuoteText)
-
-instance Migrate QuoteText where
-    type MigrateFrom QuoteText = T.Text
-    migrate t = QuoteText t
-
-data Quote_v0 = Quote_v0 {
-    quoteId_v0 :: QuoteId_v0,
-    quoteTime_v0 :: UTCTime,
-    quoteAuthor_v0 :: T.Text,
-    quoteText_v0 :: T.Text
-} deriving (Eq, Ord, Data, Typeable)
-
-$(deriveSafeCopy 0 'base ''Quote_v0)
+$(deriveSafeCopy 1 'base ''QuoteText)
 
 data Quote = Quote {
     quoteId :: QuoteId,
@@ -92,24 +61,7 @@ data Quote = Quote {
     quoteText :: QuoteText
 } deriving (Eq, Ord, Data, Typeable)
 
-$(deriveSafeCopy 1 'extension ''Quote)
-
-instance Migrate Quote where
-    type MigrateFrom Quote = Quote_v0
-    migrate (Quote_v0 i t a q) = Quote (QuoteId . unQuoteId_v0 $ i) (QuoteTime t) (QuoteAuthor a) (QuoteText q)
-
-instance Indexable Quote_v0 where
-    empty = ixSet
-        [ ixFun $ \q -> [quoteId_v0 q],
-          ixFun $ \q -> [Author_v0 (quoteAuthor_v0 q)]
-        ]
-
-data Quotes_v0 = Quotes_v0 {
-    nextQuoteId_v0 :: QuoteId_v0,
-    quotes_v0 :: IxSet Quote_v0
-} deriving (Data, Typeable)
-
-$(deriveSafeCopy 0 'base ''Quotes_v0)
+$(deriveSafeCopy 1 'base ''Quote)
 
 instance Indexable Quote where
     empty = ixSet
@@ -122,15 +74,7 @@ data Quotes = Quotes {
     quotes :: IxSet Quote
 } deriving (Data, Typeable)
 
-$(deriveSafeCopy 1 'extension ''Quotes)
-
-instance Migrate Quotes where
-    type MigrateFrom Quotes = Quotes_v0
-    migrate (Quotes_v0 i qs) = Quotes i' qs'
-        where
-            i'  = QuoteId . unQuoteId_v0 $ i
-            qs' = IX.fromList . map migrateQuotes_v0 . IX.toList $ qs
-            migrateQuotes_v0 q0 = migrate q0
+$(deriveSafeCopy 1 'base ''Quotes)
 
 initialQuotesState :: Quotes
 initialQuotesState = Quotes { nextQuoteId = QuoteId 1, quotes = IX.empty }
