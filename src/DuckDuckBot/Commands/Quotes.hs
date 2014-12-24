@@ -177,11 +177,14 @@ quotesCommandHandler inChan outChan = do
             let dir = baseDir </> server </> nick </> channel </> "quotes"
             liftIO $ createDirectoryIfMissing True dir
             return dir
-        run acid = sourceChan inChan
-                       =$= takeIRCMessage
-                       =$= CL.concatMapM (handleQuoteCommand acid)
-                       $$ CL.map OutIRCMessage
-                       =$= sinkChan outChan
+        run acid = do
+            liftIO $ createArchive acid
+
+            sourceChan inChan
+                =$= takeIRCMessage
+                =$= CL.concatMapM (handleQuoteCommand acid)
+                $$ CL.map OutIRCMessage
+                =$= sinkChan outChan
 
 handleQuoteCommand :: MonadIO m => AcidState Quotes -> IRC.Message -> m [IRC.Message]
 
