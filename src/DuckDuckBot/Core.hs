@@ -2,6 +2,8 @@ module DuckDuckBot.Core
     ( run
     ) where
 
+import Prelude hiding (catch)
+
 import DuckDuckBot.Types
 import DuckDuckBot.Utils
 import DuckDuckBot.Compat
