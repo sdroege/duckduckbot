@@ -27,6 +27,7 @@ import Control.Monad
 import Control.Monad.Reader
 import Control.Concurrent hiding (yield)
 import Control.Concurrent.Async
+import Control.Exception.Base (AsyncException(UserInterrupt))
 
 import qualified Network.IRC as IRC
 
@@ -96,7 +97,8 @@ loop env = do
             liftIO $ link writerThread
             liftIO $ mapM_ link threads
 
-            runReaderT (readLoop messageHandlerEnv connection inChan) env
+            catch (runReaderT (readLoop messageHandlerEnv connection inChan) env)
+                (\UserInterrupt -> liftIO $ writeChan inChan Quit)
             mapM_ wait threads
 
             let quitMessage = IRC.Message Nothing "QUIT" []
