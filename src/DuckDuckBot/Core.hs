@@ -22,6 +22,7 @@ import Data.Conduit
 import qualified Data.Conduit.List as CL
 
 import Control.Monad.Catch
+import Control.Exception.Base(AsyncException(ThreadKilled))
 import Control.Monad
 import Control.Monad.Reader
 import Control.Concurrent hiding (yield)
@@ -85,13 +86,15 @@ loop env = do
             :  maybeToList (fmap (authCommandHandler authUser) (cfgAuthPassword config))
             ++ map messageHandlerMetadataHandler messageHandlers
 
-    writerThread <- liftIO . async . runReaderT (writeLoop outChan connection) $ env
+        asyncCatch a = async (handle (\ThreadKilled -> return ()) a)
 
-    bracket (mapM (liftIO . async . runMessageHandler) allHandlers)
+    writerThread <- liftIO . asyncCatch . runReaderT (writeLoop outChan connection) $ env
+
+    bracket (mapM (liftIO . asyncCatch . runMessageHandler) allHandlers)
         (\threads -> mapM_ (liftIO . cancel) threads >> liftIO (cancel writerThread))
         $ \threads -> do
             liftIO $ link writerThread
-            mapM_ (liftIO . link) threads
+            liftIO $ mapM_ link threads
 
             runReaderT (readLoop messageHandlerEnv connection inChan) env
             mapM_ wait threads

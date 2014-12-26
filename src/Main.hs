@@ -9,16 +9,17 @@ import DuckDuckBot.Types
 
 import Control.Exception
 import Control.Concurrent (threadDelay)
-import Control.Concurrent.Async
+import System.Exit
 
 main :: IO ()
 main = do
     config <- getConfig
     runUntilQuit config
+    exitSuccess
 
     where
         runUntilQuit config =
-            catches (async (run config) >>= wait)
+            catches (run config)
                 [ Handler (\(e :: IOException)      -> retry e config)
                 , Handler (\(e :: TimeoutException) -> retry e config)
                 , Handler (\(e :: SomeException)    -> abort e)
@@ -30,5 +31,7 @@ main = do
             threadDelay 1000000
             runUntilQuit config
 
-        abort e = putStrLn $ "Exception while running: " ++ show e
+        abort e = do
+            putStrLn $ "Exception while running: " ++ show e
+            exitFailure
 
