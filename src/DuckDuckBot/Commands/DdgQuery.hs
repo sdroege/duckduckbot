@@ -8,10 +8,11 @@ module DuckDuckBot.Commands.DdgQuery
 
 import Data.Aeson hiding (Result)
 
+import qualified Data.ByteString.UTF8 as UB
+
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types.Header as HTTPH
 import qualified Network.HTTP.Client.TLS as HTTPS
-import qualified Network.URI as URI
 
 import Control.Monad
 import Control.Applicative
@@ -96,14 +97,19 @@ instance FromJSON Icon where
 
 query :: HTTP.Manager -> String -> IO (Maybe Results)
 query m s = do
-    let q   = URI.escapeURIString URI.isUnescapedInURIComponent s
-        url = "https://api.duckduckgo.com/?q=" ++ q ++ "&format=json&no_redirect=1&t=ddb&no_html=1"
+    let url = "https://api.duckduckgo.com"
     -- Catch all exceptions here and return nothing
     -- Better do nothing than crashing when we can't do the HTTP request
     handle (\(SomeException e) -> putStrLn ("Exception while handling Ddg request \"" ++ s ++ "\": " ++ show e) >> return Nothing) $ do
         baseReq <- HTTP.parseUrl url
         let headers = (HTTPH.hConnection, "Keep-Alive") : HTTP.requestHeaders baseReq
-            req  = baseReq { HTTP.requestHeaders=headers }
+            req  = HTTP.setQueryString [ ("q", Just (UB.fromString s))
+                                       , ("format", Just "json")
+                                       , ("no_redirect", Just "1")
+                                       , ("no_html", Just "1")
+                                       , ("t", Just "ddb")
+                                       ]
+                                       (baseReq { HTTP.requestHeaders=headers })
         resp <- HTTP.httpLbs req m
         let d = decode (HTTP.responseBody resp)
         HTTP.responseClose resp
