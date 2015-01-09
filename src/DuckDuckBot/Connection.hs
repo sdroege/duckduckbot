@@ -24,7 +24,7 @@ import qualified Network.IRC as IRC
 import qualified Network.IRC.Parser as IRCP
 
 import Control.Applicative
-import Control.Monad.State
+import Control.Monad.IO.Class
 
 import System.IO
 

@@ -23,7 +23,8 @@ import qualified Network.HTTP.Client.TLS as HTTPS
 import qualified Network.IRC as IRC
 
 import Control.Monad
-import Control.Monad.Reader
+import Control.Monad.IO.Class
+import Control.Monad.Reader.Class
 import Control.Monad.Trans.Maybe
 import Control.Concurrent
 import Control.Concurrent.Async hiding (link)

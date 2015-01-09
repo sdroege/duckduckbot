@@ -27,8 +27,9 @@ import qualified Data.Conduit.List as CL
 
 import Safe
 
-import Control.Monad.Reader
-import Control.Monad.State
+import Control.Monad.Reader.Class
+import Control.Monad.State.Class
+import Control.Monad.IO.Class
 import Control.Monad.Catch
 import qualified Network.IRC as IRC
 

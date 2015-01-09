@@ -10,7 +10,7 @@ import qualified Data.Conduit.List as CL
 
 import qualified Data.ByteString.UTF8 as UB
 
-import Control.Monad.Reader
+import Control.Monad.IO.Class
 import qualified Network.IRC as IRC
 
 import System.Random

@@ -19,7 +19,7 @@ import qualified Network.URI as URI
 import qualified Network.IRC as IRC
 
 import Control.Monad
-import Control.Monad.Reader
+import Control.Monad.IO.Class
 import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Monad.Trans.Maybe
