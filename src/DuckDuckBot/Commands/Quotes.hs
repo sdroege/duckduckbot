@@ -9,8 +9,6 @@ import DuckDuckBot.Utils
 import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as UB
 import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
-import qualified Data.Text.Encoding.Error as T
 
 import Data.IxSet as IX
 
@@ -19,14 +17,15 @@ import Data.Acid.Local
 import Data.Acid.Advanced
 import Data.SafeCopy
 import Data.Data
-import Data.Char
 import Data.Time
+
+import Text.Parsec hiding ((<|>))
+import Text.Parsec.String
 
 import Data.Conduit
 import qualified Data.Conduit.List as CL
 
-import Safe
-
+import Control.Applicative
 import Control.Monad.Reader.Class
 import Control.Monad.State.Class
 import Control.Monad.IO.Class
@@ -126,8 +125,8 @@ $(makeAcidic ''Quotes
   , 'getQuotesByAuthor
   ])
 
-getRandomQuoteByAuthor :: MonadIO m => T.Text -> AcidState Quotes -> m (Maybe Quote)
-getRandomQuoteByAuthor author acid = do
+getRandomQuoteByAuthor :: MonadIO m => AcidState Quotes -> T.Text -> m (Maybe Quote)
+getRandomQuoteByAuthor acid author = do
     qs <- query' acid (GetQuotesByAuthor author)
     if Prelude.null qs then
         return Nothing
@@ -149,9 +148,9 @@ getRandomQuote acid = do
                 Nothing -> getRandomQuote acid
                 _       -> return q
 
-getQuoteString :: MonadIO m => AcidState Quotes -> T.Text -> m (Maybe (String, String))
+getQuoteString :: MonadIO m => AcidState Quotes -> Maybe String -> m (Maybe (String, String))
 getQuoteString acid author = do
-    q <- if author == "" then getRandomQuote acid else getRandomQuoteByAuthor author acid
+    q <- maybe (getRandomQuote acid) (getRandomQuoteByAuthor acid . T.pack) author
     case q of
         Just q' -> do
                     let qId = show (unQuoteId (quoteId q'))
@@ -194,41 +193,63 @@ handleQuoteCommand acid m | isQuoteAddCommand m, (Just target) <- maybeGetPrivMs
         isQuoteAddCommand = isPrivMsgCommand "quote-add"
 
         handleQuoteAdd target = do
-            let cmd = (T.stripStart . T.decodeUtf8With T.lenientDecode . B.drop 11 . parseCommand) m
-                (author, quote') = T.break isSpace cmd
-                quote = T.strip quote'
-            if author /= T.empty && quote /= T.empty then do
-                time <- liftIO getCurrentTime
-                qId <- update' acid (AddQuote time author quote)
-                return [quoteMessage target (UB.fromString ("Added quote " ++ show qId))]
-            else
-                return []
+            let cmd = (parseQuoteAddCommand . UB.toString . parseCommand) m
+            case cmd of
+                Just (author, quote) -> do
+                    time <- liftIO getCurrentTime
+                    qId <- update' acid (AddQuote time (T.pack author) (T.strip . T.pack $ quote))
+                    return [quoteMessage target (UB.fromString ("Added quote " ++ show qId))]
+                Nothing              -> return []
+
+        parseQuoteAddCommand s = case parse command "" s of
+                                    Left _  -> Nothing
+                                    Right c -> Just c
+
+        command :: Parser (String, String)
+        command = do
+            _ <- string "!quote-add "
+            author <- many1 (noneOf " ")
+            _ <- spaces
+            quote <- many1 anyToken <* eof
+            return (author, quote)
 
 handleQuoteCommand acid m | isQuoteRmCommand m, (Just target) <- maybeGetPrivMsgReplyTarget m  = handleQuoteRm target
     where
         isQuoteRmCommand = isPrivMsgCommand "quote-rm"
 
         handleQuoteRm target = do
-            let cmd = (T.strip . T.decodeUtf8With T.lenientDecode . B.drop 10 . parseCommand) m
-                qId = (readMay . T.unpack) cmd
+            let qId = (parseQuoteRmCommand . UB.toString . parseCommand) m
             case qId of
                 (Just qId') -> do
                                     _ <- update' acid (RmQuote (QuoteId qId'))
                                     return [quoteMessage target (UB.fromString ("Removed quote " ++ show qId'))]
                 _           -> return []
 
+        parseQuoteRmCommand s = case parse command "" s of
+                                    Left _  -> Nothing
+                                    Right c -> Just c
+
+        command :: Parser Integer
+        command = string "!quote-rm " *> (read <$> many1 digit) <* spaces <* eof
 
 handleQuoteCommand acid m | isQuoteCommand m, (Just target) <- maybeGetPrivMsgReplyTarget m = handleQuote target
     where
         isQuoteCommand = isPrivMsgCommand "quote"
 
         handleQuote target = do
-            let author = (T.strip . T.decodeUtf8With T.lenientDecode . B.drop 7 . parseCommand) m
+            let author = (parseQuoteCommand . UB.toString . parseCommand) m
             q <- getQuoteString acid author
             case q of
                 Just (s',t')                -> return [quoteMessage target (UB.fromString s'), quoteMessage target (UB.fromString t')]
-                Nothing | author /= T.empty -> return [quoteMessage target (UB.fromString ("No quote by " ++ T.unpack author))]
+                Nothing | Just a <- author  -> return [quoteMessage target (UB.fromString ("No quote by " ++ a))]
                 _                           -> return []
+
+        parseQuoteCommand s = case parse command "" s of
+                                  Left _  -> Nothing
+                                  Right c -> c
+
+        command :: Parser (Maybe String)
+        command = string "!quote" *> optionMaybe (spaces *> many1 (noneOf " ")) <* spaces <* eof
 
 handleQuoteCommand _ _ = return []
 
