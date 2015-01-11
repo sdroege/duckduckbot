@@ -67,14 +67,14 @@ translateCommandHandlerMetadata = MessageHandlerMetadata {
 translateCommandHandler :: MessageHandler
 translateCommandHandler inChan outChan = liftIO $ HTTP.withManager HTTPS.tlsManagerSettings $ \manager -> do
     oauth <- newMVar Nothing
-    client_id <- liftM (fromMaybe "") $ lookupEnv "DDB_TRANSLATE_CLIENT_ID"
-    client_secret <- liftM (fromMaybe "") $ lookupEnv "DDB_TRANSLATE_CLIENT_SECRET"
+    clientId <- liftM (fromMaybe "") $ lookupEnv "DDB_TRANSLATE_CLIENT_ID"
+    clientSecret <- liftM (fromMaybe "") $ lookupEnv "DDB_TRANSLATE_CLIENT_SECRET"
 
-    if client_id /= "" && client_secret /= "" then
+    if clientId /= "" && clientSecret /= "" then
         sourceChan inChan
             =$= takeIRCMessage
             =$= CL.filter isTranslateCommand
-            =$= CL.mapM_ (handleTranslateCommand manager (client_id, client_secret) oauth outChan)
+            =$= CL.mapM_ (handleTranslateCommand manager (clientId, clientSecret) oauth outChan)
             $$ CL.sinkNull
     else
         putStrLn "ERROR: No client ID or secret for translations"
@@ -107,11 +107,11 @@ handleTranslateCommand manager client oauth outChan m
 handleTranslateCommand _ _ _ _ _ = return ()
 
 getNewAccessToken :: HTTP.Manager -> (String, String) -> IO (B.ByteString, Int)
-getNewAccessToken manager (client_id, client_secret) = do
+getNewAccessToken manager (clientId, clientSecret) = do
     let url    = "https://datamarket.accesscontrol.windows.net/v2/OAuth2-13"
         scope  = "http://api.microsofttranslator.com"
-        client = B8.pack client_id
-        secret = B8.pack client_secret
+        client = B8.pack clientId
+        secret = B8.pack clientSecret
 
     -- Catch all exceptions and print something but then rethrow them
     handle (\(SomeException e) -> putStrLn ("Exception while getting translation access token: " ++ show e) >> throwIO e) $ do
