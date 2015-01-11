@@ -14,6 +14,7 @@ import DuckDuckBot.Commands.Ddg
 import DuckDuckBot.Commands.Quotes
 import DuckDuckBot.Commands.LinkTitle
 import DuckDuckBot.Commands.Translate
+import DuckDuckBot.Commands.Weather
 
 import Data.Char
 import Data.Maybe
@@ -44,7 +45,7 @@ run :: Config -> IO ()
 run config = bracket (setup config) shutdown loop
 
 messageHandlers :: [MessageHandlerMetadata]
-messageHandlers = [pingCommandHandlerMetadata, duckCommandHandlerMetadata, ddgCommandHandlerMetadata, quotesCommandHandlerMetadata, linkTitleCommandHandlerMetadata, translateCommandHandlerMetadata]
+messageHandlers = [pingCommandHandlerMetadata, duckCommandHandlerMetadata, ddgCommandHandlerMetadata, quotesCommandHandlerMetadata, linkTitleCommandHandlerMetadata, translateCommandHandlerMetadata, weatherCommandHandlerMetadata]
 
 setup :: Config -> IO Env
 setup config = do
