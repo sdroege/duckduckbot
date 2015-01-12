@@ -13,6 +13,7 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Char8 as B8
 import qualified Data.ByteString.UTF8 as UB
 
+import Data.Char
 import Data.Time.Clock
 import Data.Maybe
 
@@ -80,7 +81,7 @@ translateCommandHandler inChan outChan = liftIO $ HTTP.withManager HTTPS.tlsMana
         putStrLn "ERROR: No client ID or secret for translations"
 
     where
-        isTranslateCommand (IRC.Message _ "PRIVMSG" (_:s:[])) | "!x-" `B.isPrefixOf` s = True
+        isTranslateCommand (IRC.Message _ "PRIVMSG" (_:s:[])) | "!x." `B.isPrefixOf` s = True
         isTranslateCommand _ = False
 
 handleTranslateCommand :: MonadIO m => HTTP.Manager -> (String, String) -> MVar (Maybe (B.ByteString, UTCTime)) -> Chan OutMessage -> IRC.Message -> m ()
@@ -90,7 +91,7 @@ handleTranslateCommand manager client oauth outChan m
         = liftIO $ void $ async (handleTranslate outChan manager client target from to text oauth)
     where
         parseCommandString m' | (_:s:[]) <- IRC.msg_params m'
-                              , "!x-" `B.isPrefixOf` s
+                              , "!x." `B.isPrefixOf` s
                               = case parse command "" (UB.toString s) of
                                     Left _  -> Nothing
                                     Right c -> Just c
@@ -98,11 +99,12 @@ handleTranslateCommand manager client oauth outChan m
 
         command :: Parser (Maybe String, String, String)
         command = do
-            _ <- string "!x-"
-            from <- fmap Just (try (count 2 letter <* char '-')) <|> return Nothing
-            to <- count 2 letter <* char ' '
+            _ <- string "!x."
+            from <- fmap Just (try (langCode <* char '.')) <|> return Nothing
+            to <- langCode <* char ' '
             text <- many1 anyToken <* eof
             return (from, to, text)
+        langCode = many1 $ satisfy (liftA2 (||) isAlpha (== '-'))
 
 handleTranslateCommand _ _ _ _ _ = return ()
 
