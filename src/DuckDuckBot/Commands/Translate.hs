@@ -81,7 +81,7 @@ translateCommandHandler inChan outChan = liftIO $ HTTP.withManager HTTPS.tlsMana
         putStrLn "ERROR: No client ID or secret for translations"
 
     where
-        isTranslateCommand (IRC.Message _ "PRIVMSG" (_:s:[])) | "!x." `B.isPrefixOf` s = True
+        isTranslateCommand (IRC.Message _ "PRIVMSG" [_, s]) | "!x." `B.isPrefixOf` s = True
         isTranslateCommand _ = False
 
 handleTranslateCommand :: MonadIO m => HTTP.Manager -> (String, String) -> MVar (Maybe (B.ByteString, UTCTime)) -> Chan OutMessage -> IRC.Message -> m ()
@@ -90,7 +90,7 @@ handleTranslateCommand manager client oauth outChan m
         , (Just (from, to, text)) <- parseCommandString m
         = liftIO $ void $ async (handleTranslate outChan manager client target from to text oauth)
     where
-        parseCommandString m' | (_:s:[]) <- IRC.msg_params m'
+        parseCommandString m' | [_, s] <- IRC.msg_params m'
                               , "!x." `B.isPrefixOf` s
                               = case parse command "" (UB.toString s) of
                                     Left _  -> Nothing

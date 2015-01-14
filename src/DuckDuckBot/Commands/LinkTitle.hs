@@ -53,7 +53,7 @@ linkTitleCommandHandler inChan outChan = do
 
 
 handleMessage :: String -> HTTP.Manager -> Chan OutMessage -> IRC.Message -> IO ()
-handleMessage nick manager outChan m@(IRC.Message (Just (IRC.NickName n _ _)) "PRIVMSG" (_:s:[]))
+handleMessage nick manager outChan m@(IRC.Message (Just (IRC.NickName n _ _)) "PRIVMSG" [_, s])
         | (Just link)   <- extractedLink
         , (Just target) <- maybeGetPrivMsgReplyTarget m
         = liftIO $ void $ async (handleLink outChan manager target link)

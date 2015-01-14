@@ -48,7 +48,7 @@ handleDdgCommand manager outChan m
         , (Just query)  <- parseQueryString m
         = liftIO $ void $ async (handleQuery outChan manager target query)
     where
-        parseQueryString m' | (_:s:[]) <- IRC.msg_params m'
+        parseQueryString m' | [_, s] <- IRC.msg_params m'
                             = case extractQuery s of
                                 q | q == B.empty -> Nothing
                                   | otherwise    -> Just q

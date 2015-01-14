@@ -118,7 +118,7 @@ handleWeatherCommand manager appId outChan m
         , (Just location)  <- parseWeatherString m
         = liftIO $ void $ async (handleWeather outChan manager appId target location)
     where
-        parseWeatherString m' | (_:s:[]) <- IRC.msg_params m'
+        parseWeatherString m' | [_, s] <- IRC.msg_params m'
                             = case extractLocation s of
                                 q | q == B.empty -> Nothing
                                   | otherwise    -> Just q

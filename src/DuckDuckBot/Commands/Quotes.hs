@@ -254,7 +254,7 @@ handleQuoteCommand acid m | isQuoteCommand m, (Just target) <- maybeGetPrivMsgRe
 handleQuoteCommand _ _ = return []
 
 parseCommand :: IRC.Message -> B.ByteString
-parseCommand (IRC.Message _ _ (_:cmd:[])) = cmd
+parseCommand (IRC.Message _ _ [_, cmd]) = cmd
 parseCommand _                            = B.empty
 
 quoteMessage :: B.ByteString -> B.ByteString -> IRC.Message

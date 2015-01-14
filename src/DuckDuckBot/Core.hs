@@ -132,7 +132,7 @@ readLoop env con inChan =
                                 handleIRCMessage
                 _      -> return ()
 
-        shouldQuit (IRC.Message (Just prefix) "PRIVMSG" (_:"!quit":[])) = liftIO $ messageHandlerEnvIsAuthUser env prefix
+        shouldQuit (IRC.Message (Just prefix) "PRIVMSG" [_,"!quit"]) = liftIO $ messageHandlerEnvIsAuthUser env prefix
         shouldQuit _                                                    = return False
 
 
@@ -185,7 +185,7 @@ helpCommandHandler inChan outChan =
         =$= sinkChan outChan
 
     where
-        handleHelpCommand m@(IRC.Message _ "PRIVMSG" (_:"!help":[]))
+        handleHelpCommand m@(IRC.Message _ "PRIVMSG" [_, "!help"])
                                 | (Just target) <- maybeGetPrivMsgReplyTarget m
                                   = Just $ helpMessage target
         handleHelpCommand _       = Nothing
@@ -212,7 +212,7 @@ authCommandHandler authUser pw inChan outChan =
         =$= sinkChan outChan
 
     where
-        handleAuthCommand (IRC.Message (Just prefix@(IRC.NickName n _ _)) "PRIVMSG" (_:s:[])) | "!auth " `B.isPrefixOf` s = handleAuth prefix n s
+        handleAuthCommand (IRC.Message (Just prefix@(IRC.NickName n _ _)) "PRIVMSG" [_, s]) | "!auth " `B.isPrefixOf` s = handleAuth prefix n s
         handleAuthCommand _                                                                                               = return []
 
         handleAuth prefix n s = do

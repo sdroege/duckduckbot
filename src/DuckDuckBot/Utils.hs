@@ -25,13 +25,13 @@ import qualified Data.ByteString as B
 import qualified Network.IRC as IRC
 
 isPrivMsgCommand :: B.ByteString -> IRC.Message -> Bool
-isPrivMsgCommand c (IRC.Message _ "PRIVMSG" (_:s:[])) = (commandString `B.append` " ") `B.isPrefixOf` s || commandString == s
+isPrivMsgCommand c (IRC.Message _ "PRIVMSG" [_, s]) = (commandString `B.append` " ") `B.isPrefixOf` s || commandString == s
                                                         where
                                                             commandString = "!" `B.append` c
 isPrivMsgCommand _ _                                  = False
 
 maybeGetPrivMsgReplyTarget :: IRC.Message -> Maybe B.ByteString
-maybeGetPrivMsgReplyTarget (IRC.Message _ "PRIVMSG" (target:_:[]))
+maybeGetPrivMsgReplyTarget (IRC.Message _ "PRIVMSG" [target, _])
                             | isChannel target = Just target
                             where
                                 isChannel = ("#" `B.isPrefixOf`)
