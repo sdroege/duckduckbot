@@ -168,7 +168,7 @@ handleWeather outChan manager appId target location = void $ runMaybeT $ do
                                                                          ++ weather ++ " (" ++ description ++ "), Temperature: "
                                                                          ++ show temp ++ "°C (from " ++ show tempMin ++ "°C to "
                                                                          ++ show tempMax ++ "°C), Humidity: " ++ show humidity
-                                                                         ++ "%, Wind speed: " ++ show speed ++ "km/s"
-                                                                         ++ maybe "." (\g -> ", gust: " ++ show g ++ "km/s.") gust
+                                                                         ++ "%, Wind speed: " ++ show speed ++ "m/s"
+                                                                         ++ maybe "." (\g -> ", gust: " ++ show g ++ "m/s.") gust
 
         generateReply _                                                = "Failed to get weather for " ++ UB.toString location
