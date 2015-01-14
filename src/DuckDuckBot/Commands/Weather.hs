@@ -44,8 +44,6 @@ data OwmSys = OwmSys
 
 data OwmMain = OwmMain
     { owmMainTemp :: Double
-    , owmMainTempMin :: Double
-    , owmMainTempMax :: Double
     , owmMainHumidity :: Double
     } deriving (Show, Eq)
 
@@ -76,8 +74,6 @@ instance FromJSON OwmSys where
 instance FromJSON OwmMain where
     parseJSON (Object v) = OwmMain
                                 <$> v .: "temp"
-                                <*> v .: "temp_min"
-                                <*> v .: "temp_max"
                                 <*> v .: "humidity"
     parseJSON _          = mzero
 
@@ -162,12 +158,11 @@ handleWeather outChan manager appId target location = void $ runMaybeT $ do
 
         generateReply (Just (OwmReply name
                                 (OwmSys country)
-                                (OwmMain temp tempMin tempMax humidity)
+                                (OwmMain temp humidity)
                                 (OwmWind speed gust)
                                 (OwmWeather weather description:_))) = "Weather for " ++ name ++ " (" ++ country ++ "): "
                                                                          ++ weather ++ " (" ++ description ++ "), Temperature: "
-                                                                         ++ show temp ++ "°C (from " ++ show tempMin ++ "°C to "
-                                                                         ++ show tempMax ++ "°C), Humidity: " ++ show humidity
+                                                                         ++ show temp ++ "°C, Humidity: " ++ show humidity
                                                                          ++ "%, Wind speed: " ++ show speed ++ "m/s"
                                                                          ++ maybe "." (\g -> ", gust: " ++ show g ++ "m/s.") gust
 
