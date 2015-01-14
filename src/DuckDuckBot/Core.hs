@@ -216,7 +216,7 @@ authCommandHandler authUser pw inChan outChan =
         handleAuthCommand _                                                                                               = return []
 
         handleAuth prefix n s = do
-                                    let p = UB.toString (B.drop 6 s)
+                                    let p = UB.toString (B.drop (length ("!auth " :: String)) s)
                                     if p == pw then
                                         do
                                             old <- liftIO $ swapMVar authUser (Just prefix)

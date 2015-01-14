@@ -54,7 +54,7 @@ handleDdgCommand manager outChan m
                                   | otherwise    -> Just q
         parseQueryString _  = Nothing
 
-        extractQuery = B.dropWhile isSpaceB . B.drop 4
+        extractQuery = B.dropWhile isSpaceB . B.drop (length ("!ddg" :: String))
         isSpaceB = (== fromIntegral (ord ' '))
 
 handleDdgCommand _ _ _ = return ()

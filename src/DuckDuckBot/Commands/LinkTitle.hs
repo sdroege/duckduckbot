@@ -112,7 +112,7 @@ readChunks limit resp = runMaybeT $ do
         charset = if t' == B.empty then
                     "utf-8"
                   else
-                    BC.takeWhile (\a -> a /= ';' && a /= ' ') . B.drop 8 $ t'
+                    BC.takeWhile (\a -> a /= ';' && a /= ' ') . B.drop (length ("charset=" :: String)) $ t'
 
     body <- liftMaybe <=< liftIO $ readChunks' [] 0
     return (charset, body)
