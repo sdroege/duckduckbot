@@ -7,10 +7,9 @@ import DuckDuckBot.Utils
 
 import qualified Network.IRC as IRC
 
+import Data.Int
 import Data.Conduit
 import qualified Data.Conduit.List as CL
-
-import Data.Time.Clock
 
 import Control.Monad
 import Control.Concurrent
@@ -29,7 +28,7 @@ pingCommandHandlerMetadata = MessageHandlerMetadata {
 
 pingCommandHandler :: MessageHandler
 pingCommandHandler inChan outChan = do
-    currentTime <- liftIO getCurrentTime
+    currentTime <- liftIO getCurrentMonotonicTime
     lastMessageTime <- liftIO $ newMVar currentTime
     serverName <- liftIO (newMVar Nothing :: IO (MVar (Maybe IRC.ServerName)))
 
@@ -42,9 +41,9 @@ pingCommandHandler inChan outChan = do
             $$ CL.map OutIRCMessage
             =$= sinkChan outChan
 
-handlePingCommand :: MVar (Maybe IRC.ServerName) -> MVar UTCTime -> IRC.Message -> IO (Maybe IRC.Message)
+handlePingCommand :: MVar (Maybe IRC.ServerName) -> MVar Int64 -> IRC.Message -> IO (Maybe IRC.Message)
 handlePingCommand serverName lastMessageTime msg = do
-    liftIO $ modifyMVar_ lastMessageTime (const getCurrentTime)
+    liftIO $ modifyMVar_ lastMessageTime (const getCurrentMonotonicTime)
 
     case msg of
         (IRC.Message (Just (IRC.Server name)) _ _) -> modifyMVar_ serverName (\_ -> return . Just $ name)
@@ -59,15 +58,15 @@ handlePingCommand serverName lastMessageTime msg = do
                                             IRC.msg_params = targets
                                           }
 
-checkTimeout :: MVar (Maybe IRC.ServerName) -> MVar UTCTime -> Chan OutMessage -> IO ()
+checkTimeout :: MVar (Maybe IRC.ServerName) -> MVar Int64 -> Chan OutMessage -> IO ()
 checkTimeout serverName lastMessageTime outChan = forever $ do
     threadDelay 30000000
 
     s <- readMVar serverName
     l <- readMVar lastMessageTime
-    n <- getCurrentTime
+    n <- getCurrentMonotonicTime
 
-    let diff = diffUTCTime n l
+    let diff = n - l
 
     case s of
         Nothing              -> throwIO TimeoutException

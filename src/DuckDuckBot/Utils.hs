@@ -6,7 +6,8 @@ module DuckDuckBot.Utils(
     liftMaybe,
     sourceChan,
     sinkChan,
-    takeIRCMessage
+    takeIRCMessage,
+    getCurrentMonotonicTime
 ) where
 
 import DuckDuckBot.Types
@@ -16,6 +17,7 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.Maybe
 import Control.Concurrent (Chan, readChan, writeChan)
 
+import Data.Int
 import Data.Conduit
 import qualified Data.Conduit.List as CL
 import qualified Data.Conduit.Combinators as CC
@@ -23,6 +25,8 @@ import qualified Data.Conduit.Combinators as CC
 import qualified Data.ByteString as B
 
 import qualified Network.IRC as IRC
+
+import System.Clock
 
 isPrivMsgCommand :: B.ByteString -> IRC.Message -> Bool
 isPrivMsgCommand c (IRC.Message _ "PRIVMSG" [_, s]) = (commandString `B.append` " ") `B.isPrefixOf` s || commandString == s
@@ -56,4 +60,11 @@ takeIRCMessage = CC.takeWhile (not . isQuit) =$= CL.mapMaybe unwrapInIRCMessage
 
         unwrapInIRCMessage (InIRCMessage m) = Just m
         unwrapInIRCMessage _                = Nothing
+
+-- New versions return Int64 so it works for more than 136 years,
+-- which makes the fromIntegral unnecessary
+--
+-- Also we don't need sub-second precision here
+getCurrentMonotonicTime :: IO Int64
+getCurrentMonotonicTime = fmap (fromIntegral . sec) (getTime Monotonic)
 

@@ -13,8 +13,8 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Char8 as B8
 import qualified Data.ByteString.UTF8 as UB
 
+import Data.Int
 import Data.Char
-import Data.Time.Clock
 import Data.Maybe
 
 import qualified Network.HTTP.Client as HTTP
@@ -84,7 +84,7 @@ translateCommandHandler inChan outChan = liftIO $ HTTP.withManager HTTPS.tlsMana
         isTranslateCommand (IRC.Message _ "PRIVMSG" [_, s]) | "!x." `B.isPrefixOf` s = True
         isTranslateCommand _ = False
 
-handleTranslateCommand :: MonadIO m => HTTP.Manager -> (String, String) -> MVar (Maybe (B.ByteString, UTCTime)) -> Chan OutMessage -> IRC.Message -> m ()
+handleTranslateCommand :: MonadIO m => HTTP.Manager -> (String, String) -> MVar (Maybe (B.ByteString, Int64)) -> Chan OutMessage -> IRC.Message -> m ()
 handleTranslateCommand manager client oauth outChan m
         | (Just target)           <- maybeGetPrivMsgReplyTarget m
         , (Just (from, to, text)) <- parseCommandString m
@@ -131,21 +131,21 @@ getNewAccessToken manager (clientId, clientSecret) = do
 
         return (B8.pack . oAuthAccessToken $ oauth, fromMaybe 0 $ oAuthExpiresIn oauth)
 
-getAccessToken :: HTTP.Manager -> (String, String) -> Maybe (B.ByteString, UTCTime) -> IO (Maybe (B.ByteString, UTCTime), B.ByteString)
+getAccessToken :: HTTP.Manager -> (String, String) -> Maybe (B.ByteString, Int64) -> IO (Maybe (B.ByteString, Int64), B.ByteString)
 getAccessToken manager client oauth = do
-    currentTime <- getCurrentTime
+    currentTime <- getCurrentMonotonicTime
 
     -- If the token will expire in less than 10s (or is expired), we need a new one
-    let oauth' = oauth >>= (\v@(_, oldTime) -> if oldTime >= addUTCTime 10 currentTime then Just v else Nothing)
+    let oauth' = oauth >>= (\v@(_, oldTime) -> if oldTime >= 10 + currentTime then Just v else Nothing)
 
     case oauth' of
         Nothing -> do
                      (accessToken, expiresIn) <- getNewAccessToken manager client
-                     currentTime' <- getCurrentTime
-                     return (Just (accessToken, addUTCTime (fromIntegral expiresIn) currentTime'), accessToken)
+                     currentTime' <- getCurrentMonotonicTime
+                     return (Just (accessToken, fromIntegral expiresIn + currentTime'), accessToken)
         Just v@(accessToken, _) -> return (Just v, accessToken)
 
-handleTranslate :: Chan OutMessage -> HTTP.Manager -> (String, String) -> B.ByteString -> Maybe String -> String -> String -> MVar (Maybe (B.ByteString, UTCTime)) -> IO ()
+handleTranslate :: Chan OutMessage -> HTTP.Manager -> (String, String) -> B.ByteString -> Maybe String -> String -> String -> MVar (Maybe (B.ByteString, Int64)) -> IO ()
 handleTranslate outChan manager client target from to text oauth = void $ runMaybeT $ do
 
     accessToken <- liftIO $ modifyMVar oauth (getAccessToken manager client)
