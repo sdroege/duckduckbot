@@ -76,11 +76,12 @@ handleLink outChan manager target link = void $ runMaybeT $ do
     void $ liftIO $ writeChan outChan $ OutIRCMessage $ generateMessage title
 
     where
-        getTitle = fmap T.strip . headDef Nothing . fmap maybeTagText . getTitleBlock . getHeadBlock . getHtmlBlock
+        getTitle = fmap (T.strip . filterControl) . headDef Nothing . fmap maybeTagText . getTitleBlock . getHeadBlock . getHtmlBlock
         getBlock name = takeWhile (not . tagCloseNameLit name) . drop 1 . dropWhile (not . tagOpenNameLit name)
         getHtmlBlock = getBlock "html"
         getHeadBlock = getBlock "head"
         getTitleBlock = getBlock "title"
+        filterControl = T.filter isPrint . T.map (\c -> if isSpace c then ' ' else c)
 
         generateMessage title = IRC.Message {  IRC.msg_prefix = Nothing,
                                                IRC.msg_command = "PRIVMSG",
