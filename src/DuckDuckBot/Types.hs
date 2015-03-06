@@ -26,6 +26,8 @@ import Control.Concurrent.MVar
 import Data.Typeable
 import Control.Exception
 
+import qualified Network.HTTP.Client as HTTP
+
 type EnvReader = ReaderT Env
 data Env = Env {
     envConfig      :: Config,
@@ -50,7 +52,8 @@ data MessageHandlerEnv = MessageHandlerEnv {
     messageHandlerEnvServer  :: String,
     messageHandlerEnvNick    :: String,
     messageHandlerEnvChannel :: String,
-    messageHandlerEnvIsAuthUser :: IRC.Prefix -> IO Bool
+    messageHandlerEnvIsAuthUser :: IRC.Prefix -> IO Bool,
+    messageHandlerEnvHttpManager :: HTTP.Manager
 }
 
 -- More messages to be added here if we ever have

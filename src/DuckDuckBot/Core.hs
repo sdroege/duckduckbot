@@ -35,6 +35,9 @@ import Control.Exception.Base (AsyncException(UserInterrupt))
 
 import qualified Network.IRC as IRC
 
+import qualified Network.HTTP.Client as HTTP
+import qualified Network.HTTP.Client.TLS as HTTPS
+
 -- Run everything. We run the read loop in the main thread
 -- and everything else in other threads.
 --
@@ -70,7 +73,7 @@ shutdown :: Env -> IO ()
 shutdown env = closeConnection (envConnection env)
 
 loop :: Env -> IO ()
-loop env = do
+loop env = bracket (HTTP.newManager HTTPS.tlsManagerSettings) HTTP.closeManager $ \httpManager -> do
     let connection = envConnection env
         inChan = envInChan env
         outChan = envOutChan env
@@ -81,7 +84,8 @@ loop env = do
     let messageHandlerEnv   = MessageHandlerEnv { messageHandlerEnvServer  = cfgServer config,
                                                   messageHandlerEnvNick    = cfgNick config,
                                                   messageHandlerEnvChannel = cfgChannel config,
-                                                  messageHandlerEnvIsAuthUser = isAuthUser authUser
+                                                  messageHandlerEnvIsAuthUser = isAuthUser authUser,
+                                                  messageHandlerEnvHttpManager = httpManager
                                                 }
         runMessageHandler m = do
             mChan <- dupChan inChan

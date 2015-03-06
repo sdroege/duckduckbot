@@ -19,7 +19,6 @@ import qualified Data.Conduit.List as CL
 
 import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Types.Header as HTTPH
-import qualified Network.HTTP.Client.TLS as HTTPS
 import qualified Network.IRC as IRC
 
 import Control.Monad
@@ -45,14 +44,13 @@ linkTitleCommandHandlerMetadata = MessageHandlerMetadata {
 linkTitleCommandHandler :: MessageHandler
 linkTitleCommandHandler inChan outChan = do
     nick <- asks messageHandlerEnvNick
-    liftIO $ HTTP.withManager HTTPS.tlsManagerSettings $ \manager ->
-        sourceChan inChan
-            =$= takeIRCMessage
-            =$= CL.mapM_ (handleMessage nick manager outChan)
-            $$ CL.sinkNull
+    manager <- asks messageHandlerEnvHttpManager
+    sourceChan inChan
+        =$= takeIRCMessage
+        =$= CL.mapM_ (handleMessage nick manager outChan)
+        $$ CL.sinkNull
 
-
-handleMessage :: String -> HTTP.Manager -> Chan OutMessage -> IRC.Message -> IO ()
+handleMessage :: MonadIO m => String -> HTTP.Manager -> Chan OutMessage -> IRC.Message -> m ()
 handleMessage nick manager outChan m@(IRC.Message (Just (IRC.NickName n _ _)) "PRIVMSG" [_, s])
         | (Just link)   <- extractedLink
         , (Just target) <- maybeGetPrivMsgReplyTarget m

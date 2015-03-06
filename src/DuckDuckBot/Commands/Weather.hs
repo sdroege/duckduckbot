@@ -19,11 +19,11 @@ import Data.Conduit
 import qualified Data.Conduit.List as CL
 
 import qualified Network.HTTP.Client as HTTP
-import qualified Network.HTTP.Client.TLS as HTTPS
 import qualified Network.IRC as IRC
 
 import Control.Applicative
 import Control.Monad
+import Control.Monad.Reader.Class
 import Control.Monad.IO.Class
 import Control.Concurrent
 import Control.Concurrent.Async
@@ -97,8 +97,9 @@ weatherCommandHandlerMetadata = MessageHandlerMetadata {
 }
 
 weatherCommandHandler :: MessageHandler
-weatherCommandHandler inChan outChan = liftIO $ HTTP.withManager HTTPS.tlsManagerSettings $ \manager -> do
-    appId <- liftM (fromMaybe "") $ lookupEnv "DDB_WEATHER_APP_ID"
+weatherCommandHandler inChan outChan = do
+    manager <- asks messageHandlerEnvHttpManager
+    appId <- liftM (fromMaybe "") . liftIO $ lookupEnv "DDB_WEATHER_APP_ID"
 
     if appId /= "" then
         sourceChan inChan
@@ -107,7 +108,7 @@ weatherCommandHandler inChan outChan = liftIO $ HTTP.withManager HTTPS.tlsManage
             =$= CL.mapM_ (handleWeatherCommand manager appId outChan)
             $$ CL.sinkNull
     else
-        putStrLn "ERROR: No app ID or secret for weather"
+        liftIO $ putStrLn "ERROR: No app ID or secret for weather"
 
     where
         isWeatherCommand = isPrivMsgCommand "weather"

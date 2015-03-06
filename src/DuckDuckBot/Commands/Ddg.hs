@@ -14,11 +14,11 @@ import Data.Conduit
 import qualified Data.Conduit.List as CL
 
 import qualified Network.HTTP.Client as HTTP
-import qualified Network.HTTP.Client.TLS as HTTPS
 import qualified Network.URI as URI
 import qualified Network.IRC as IRC
 
 import Control.Monad
+import Control.Monad.Reader.Class
 import Control.Monad.IO.Class
 import Control.Concurrent
 import Control.Concurrent.Async
@@ -32,7 +32,8 @@ ddgCommandHandlerMetadata = MessageHandlerMetadata {
 }
 
 ddgCommandHandler :: MessageHandler
-ddgCommandHandler inChan outChan = liftIO $ HTTP.withManager HTTPS.tlsManagerSettings $ \manager ->
+ddgCommandHandler inChan outChan = do
+    manager <- asks messageHandlerEnvHttpManager
     sourceChan inChan
         =$= takeIRCMessage
         =$= CL.filter isDdgCommand

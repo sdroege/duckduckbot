@@ -18,7 +18,6 @@ import Data.Char
 import Data.Maybe
 
 import qualified Network.HTTP.Client as HTTP
-import qualified Network.HTTP.Client.TLS as HTTPS
 
 import qualified Text.XML.Light as XML
 
@@ -36,6 +35,7 @@ import Control.Concurrent.Async
 
 import Control.Applicative
 import Control.Monad
+import Control.Monad.Reader.Class
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Maybe
 import Control.Exception hiding (try)
@@ -66,10 +66,11 @@ translateCommandHandlerMetadata = MessageHandlerMetadata {
 }
 
 translateCommandHandler :: MessageHandler
-translateCommandHandler inChan outChan = liftIO $ HTTP.withManager HTTPS.tlsManagerSettings $ \manager -> do
-    oauth <- newMVar Nothing
-    clientId <- liftM (fromMaybe "") $ lookupEnv "DDB_TRANSLATE_CLIENT_ID"
-    clientSecret <- liftM (fromMaybe "") $ lookupEnv "DDB_TRANSLATE_CLIENT_SECRET"
+translateCommandHandler inChan outChan = do
+    manager <- asks messageHandlerEnvHttpManager
+    oauth <- liftIO $ newMVar Nothing
+    clientId <- liftM (fromMaybe "") . liftIO $ lookupEnv "DDB_TRANSLATE_CLIENT_ID"
+    clientSecret <- liftM (fromMaybe "") . liftIO $ lookupEnv "DDB_TRANSLATE_CLIENT_SECRET"
 
     if clientId /= "" && clientSecret /= "" then
         sourceChan inChan
@@ -78,7 +79,7 @@ translateCommandHandler inChan outChan = liftIO $ HTTP.withManager HTTPS.tlsMana
             =$= CL.mapM_ (handleTranslateCommand manager (clientId, clientSecret) oauth outChan)
             $$ CL.sinkNull
     else
-        putStrLn "ERROR: No client ID or secret for translations"
+        liftIO $ putStrLn "ERROR: No client ID or secret for translations"
 
     where
         isTranslateCommand (IRC.Message _ "PRIVMSG" [_, s]) | "!x." `B.isPrefixOf` s = True
