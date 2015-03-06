@@ -97,7 +97,7 @@ loop env = bracket (HTTP.newManager HTTPS.tlsManagerSettings) HTTP.closeManager 
 
         asyncCatch a = async (handle (\ThreadKilled -> return ()) a)
 
-    writerThread <- liftIO . asyncCatch . runReaderT (writeLoop outChan connection) $ env
+    writerThread <- liftIO . asyncCatch $ writeLoop (envConfig env) outChan connection
 
     bracket (mapM (liftIO . asyncCatch . runMessageHandler) allHandlers)
         (\threads -> mapM_ (liftIO . cancel) threads >> liftIO (cancel writerThread))
@@ -105,7 +105,7 @@ loop env = bracket (HTTP.newManager HTTPS.tlsManagerSettings) HTTP.closeManager 
             liftIO $ link writerThread
             liftIO $ mapM_ link threads
 
-            catch (runReaderT (readLoop messageHandlerEnv connection inChan) env)
+            catch (readLoop messageHandlerEnv connection inChan)
                 (\UserInterrupt -> liftIO $ writeChan inChan Quit)
             mapM_ wait threads
 
@@ -119,7 +119,7 @@ loop env = bracket (HTTP.newManager HTTPS.tlsManagerSettings) HTTP.closeManager 
 -- and writes them to the envInChan for all command handlers
 -- to consume them
 --
-readLoop :: MessageHandlerEnv -> Connection -> Chan InMessage -> EnvReader IO ()
+readLoop :: MessageHandlerEnv -> Connection -> Chan InMessage -> IO ()
 readLoop env con inChan =
     sourceIRCConnection con $$ handleIRCMessage =$= sinkChan inChan
 
@@ -148,9 +148,8 @@ readLoop env con inChan =
 -- We don't catch any exceptions here. If writing to the
 -- connection fails we will stop the application
 --
-writeLoop :: Chan OutMessage -> Connection -> EnvReader IO ()
-writeLoop chan con = do
-    config <- asks envConfig
+writeLoop :: Config -> Chan OutMessage -> Connection -> IO ()
+writeLoop config chan con = do
 
     -- Send initial commands
     let initialCommands = map (\(c, p) -> IRC.Message Nothing c (map UB.fromString p)) . catMaybes $

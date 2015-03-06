@@ -2,7 +2,6 @@
 
 module DuckDuckBot.Types (
     Env (..),
-    EnvReader,
     Config (..),
     InMessage (..),
     OutMessage (..),
@@ -28,7 +27,6 @@ import Control.Exception
 
 import qualified Network.HTTP.Client as HTTP
 
-type EnvReader = ReaderT Env
 data Env = Env {
     envConfig      :: Config,
     envConnection  :: Connection,
