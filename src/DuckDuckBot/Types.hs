@@ -19,8 +19,7 @@ import DuckDuckBot.Connection
 import Control.Monad.Reader
 
 import qualified Network.IRC as IRC
-import Control.Concurrent.Chan
-import Control.Concurrent.MVar
+import Control.Concurrent.STM.TMChan
 
 import Data.Typeable
 import Control.Exception
@@ -30,9 +29,8 @@ import qualified Network.HTTP.Client as HTTP
 data Env = Env {
     envConfig      :: Config,
     envConnection  :: Connection,
-    envInChan      :: Chan InMessage, -- This is duplicated to all message handlers
-    envOutChan     :: Chan OutMessage,
-    envAuthUser    :: MVar (Maybe IRC.Prefix)
+    envInChan      :: TMChan InMessage, -- This is duplicated to all message handlers
+    envOutChan     :: TMChan OutMessage
 }
 
 data Config = Config {
@@ -56,12 +54,12 @@ data MessageHandlerEnv = MessageHandlerEnv {
 
 -- More messages to be added here if we ever have
 -- to tell our command handlers to do anything
-data InMessage  = InIRCMessage IRC.Message | Quit
+data InMessage  = InIRCMessage IRC.Message
     deriving (Show)
 data OutMessage = OutIRCMessage IRC.Message
     deriving (Show)
 
-type MessageHandler = Chan InMessage -> Chan OutMessage -> MessageHandlerEnvReader IO ()
+type MessageHandler = TMChan InMessage -> TMChan OutMessage -> MessageHandlerEnvReader IO ()
 type MessageHandlerSendMessage = IRC.Message -> IO ()
 
 data MessageHandlerMetadata = MessageHandlerMetadata {

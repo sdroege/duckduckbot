@@ -21,17 +21,17 @@ import Data.Maybe
 import Data.List
 import qualified Data.ByteString.UTF8 as UB
 import qualified Data.ByteString as B
+import Data.IORef
 
 import Data.Conduit
 import qualified Data.Conduit.List as CL
 
 import Control.Monad.Catch
-import Control.Exception.Base(AsyncException(ThreadKilled))
-import Control.Monad
 import Control.Monad.Reader
-import Control.Concurrent hiding (yield)
+import Control.Concurrent.STM
+import Control.Concurrent.STM.TMChan
 import Control.Concurrent.Async
-import Control.Exception.Base (AsyncException(UserInterrupt))
+import Control.Exception.Base (AsyncException(UserInterrupt, ThreadKilled))
 
 import qualified Network.IRC as IRC
 
@@ -54,17 +54,14 @@ setup :: Config -> IO Env
 setup config = do
     connection <- newConnection (cfgServer config) (cfgPort config) (cfgUseSsl config)
 
-    inChan  <- newChan :: IO (Chan InMessage)
-    outChan <- newChan :: IO (Chan OutMessage)
-
-    authUser <- newMVar (Nothing :: Maybe IRC.Prefix)
+    inChan  <- newBroadcastTMChanIO
+    outChan <- newTMChanIO
 
     let env = Env {
         envConfig=config,
         envConnection=connection,
         envInChan=inChan,
-        envOutChan=outChan,
-        envAuthUser=authUser
+        envOutChan=outChan
     }
 
     return env
@@ -78,7 +75,8 @@ loop env = bracket (HTTP.newManager HTTPS.tlsManagerSettings) HTTP.closeManager 
         inChan = envInChan env
         outChan = envOutChan env
         config = envConfig env
-        authUser = envAuthUser env
+
+    authUser <- newIORef Nothing
 
     -- Start all message handlers here
     let messageHandlerEnv   = MessageHandlerEnv { messageHandlerEnvServer  = cfgServer config,
@@ -88,7 +86,7 @@ loop env = bracket (HTTP.newManager HTTPS.tlsManagerSettings) HTTP.closeManager 
                                                   messageHandlerEnvHttpManager = httpManager
                                                 }
         runMessageHandler m = do
-            mChan <- dupChan inChan
+            mChan <- liftIO . atomically $ dupTMChan inChan
             runReaderT (m mChan outChan) messageHandlerEnv
 
         allHandlers = helpCommandHandler
@@ -106,11 +104,13 @@ loop env = bracket (HTTP.newManager HTTPS.tlsManagerSettings) HTTP.closeManager 
             liftIO $ mapM_ link threads
 
             catch (readLoop messageHandlerEnv connection inChan)
-                (\UserInterrupt -> liftIO $ writeChan inChan Quit)
+                (\UserInterrupt -> liftIO . atomically $ closeTMChan inChan)
             mapM_ wait threads
 
             let quitMessage = IRC.Message Nothing "QUIT" []
-            liftIO $ writeChan outChan (OutIRCMessage quitMessage)
+            liftIO . atomically $ do
+                writeTMChan outChan (OutIRCMessage quitMessage)
+                closeTMChan outChan
 
             wait writerThread
 
@@ -119,7 +119,7 @@ loop env = bracket (HTTP.newManager HTTPS.tlsManagerSettings) HTTP.closeManager 
 -- and writes them to the envInChan for all command handlers
 -- to consume them
 --
-readLoop :: MessageHandlerEnv -> Connection -> Chan InMessage -> IO ()
+readLoop :: MessageHandlerEnv -> Connection -> TMChan InMessage -> IO ()
 readLoop env con inChan =
     sourceIRCConnection con $$ handleIRCMessage =$= sinkChan inChan
 
@@ -130,14 +130,15 @@ readLoop env con inChan =
                 Just m -> do
                             yield $ InIRCMessage m
                             q <- shouldQuit m
-                            if q then
-                                void $ yield Quit
+                            if q then do
+                                liftIO . atomically $ closeTMChan inChan
+                                return ()
                             else
                                 handleIRCMessage
                 _      -> return ()
 
         shouldQuit (IRC.Message (Just prefix) "PRIVMSG" [_,"!quit"]) = liftIO $ messageHandlerEnvIsAuthUser env prefix
-        shouldQuit _                                                    = return False
+        shouldQuit _                                                 = return False
 
 
 --
@@ -148,7 +149,7 @@ readLoop env con inChan =
 -- We don't catch any exceptions here. If writing to the
 -- connection fails we will stop the application
 --
-writeLoop :: Config -> Chan OutMessage -> Connection -> IO ()
+writeLoop :: Config -> TMChan OutMessage -> Connection -> IO ()
 writeLoop config chan con = do
 
     -- Send initial commands
@@ -163,18 +164,10 @@ writeLoop config chan con = do
 
     -- Write all following messages and stop on QUIT
     sourceChan chan
-        $$ handleOutMessage
+        $$ CL.map unwrapOutIRCMessage
         =$= sinkIRCConnection con
-
-    where
-        handleOutMessage = do
-            msg <- await
-            case msg of
-                Just (OutIRCMessage m) -> do
-                                            yield m
-                                            unless (IRC.msg_command m == "QUIT")
-                                                handleOutMessage
-                _                       -> return ()
+        where
+            unwrapOutIRCMessage (OutIRCMessage m) = m
 
 --
 -- Special handler for the !help command without parameters
@@ -206,7 +199,7 @@ helpCommandHandler inChan outChan =
 --
 -- Special handler for the !auth command
 --
-authCommandHandler :: MVar (Maybe IRC.Prefix) -> String -> MessageHandler
+authCommandHandler :: IORef (Maybe IRC.Prefix) -> String -> MessageHandler
 authCommandHandler authUser pw inChan outChan =
     sourceChan inChan
         =$= takeIRCMessage
@@ -222,7 +215,7 @@ authCommandHandler authUser pw inChan outChan =
                                     let p = UB.toString (B.drop (length ("!auth " :: String)) s)
                                     if p == pw then
                                         do
-                                            old <- liftIO $ swapMVar authUser (Just prefix)
+                                            old <- liftIO $ atomicModifyIORef' authUser (\a -> (Just prefix, a))
                                             return $ catMaybes
                                                 [ Just $ authMessage n ("Authenticated " `B.append` n)
                                                 , case old of
@@ -237,9 +230,9 @@ authCommandHandler authUser pw inChan outChan =
                                           IRC.msg_params = [n, m]
                                       }
 
-isAuthUser :: MVar (Maybe IRC.Prefix) -> IRC.Prefix -> IO Bool
+isAuthUser :: IORef (Maybe IRC.Prefix) -> IRC.Prefix -> IO Bool
 isAuthUser m n = do
-    a <- readMVar m
+    a <- readIORef m
     case a of
         Just p -> return (n == p)
         _      -> return False

@@ -25,7 +25,8 @@ import Control.Applicative
 import Control.Monad
 import Control.Monad.Reader.Class
 import Control.Monad.IO.Class
-import Control.Concurrent
+import Control.Concurrent.STM
+import Control.Concurrent.STM.TMChan
 import Control.Concurrent.Async
 import Control.Monad.Trans.Maybe
 import Control.Exception
@@ -113,7 +114,7 @@ weatherCommandHandler inChan outChan = do
     where
         isWeatherCommand = isPrivMsgCommand "weather"
 
-handleWeatherCommand :: MonadIO m => HTTP.Manager -> String -> Chan OutMessage -> IRC.Message -> m ()
+handleWeatherCommand :: MonadIO m => HTTP.Manager -> String -> TMChan OutMessage -> IRC.Message -> m ()
 handleWeatherCommand manager appId outChan m
         | (Just target) <- maybeGetPrivMsgReplyTarget m
         , (Just location)  <- parseWeatherString m
@@ -130,7 +131,7 @@ handleWeatherCommand manager appId outChan m
 
 handleWeatherCommand _ _ _ _ = return ()
 
-handleWeather :: Chan OutMessage -> HTTP.Manager -> String -> B.ByteString -> B.ByteString -> IO ()
+handleWeather :: TMChan OutMessage -> HTTP.Manager -> String -> B.ByteString -> B.ByteString -> IO ()
 handleWeather outChan manager appId target location = void $ runMaybeT $ do
     let url = "http://api.openweathermap.org/data/2.5/weather"
 
@@ -149,7 +150,7 @@ handleWeather outChan manager appId target location = void $ runMaybeT $ do
         HTTP.httpLbs req manager
 
     let reply = generateReply (decode (HTTP.responseBody resp) :: Maybe OwmReply)
-    liftIO $ writeChan outChan (OutIRCMessage $ replyMessage (UB.fromString reply))
+    liftIO . atomically $ writeTMChan outChan (OutIRCMessage $ replyMessage (UB.fromString reply))
 
     where
         replyMessage text = IRC.Message {  IRC.msg_prefix = Nothing,

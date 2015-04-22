@@ -20,7 +20,8 @@ import qualified Network.IRC as IRC
 import Control.Monad
 import Control.Monad.Reader.Class
 import Control.Monad.IO.Class
-import Control.Concurrent
+import Control.Concurrent.STM
+import Control.Concurrent.STM.TMChan
 import Control.Concurrent.Async
 import Control.Monad.Trans.Maybe
 
@@ -43,7 +44,7 @@ ddgCommandHandler inChan outChan = do
     where
         isDdgCommand = isPrivMsgCommand "ddg"
 
-handleDdgCommand :: MonadIO m => HTTP.Manager -> Chan OutMessage -> IRC.Message -> m ()
+handleDdgCommand :: MonadIO m => HTTP.Manager -> TMChan OutMessage -> IRC.Message -> m ()
 handleDdgCommand manager outChan m
         | (Just target) <- maybeGetPrivMsgReplyTarget m
         , (Just query)  <- parseQueryString m
@@ -60,13 +61,13 @@ handleDdgCommand manager outChan m
 
 handleDdgCommand _ _ _ = return ()
 
-handleQuery :: Chan OutMessage -> HTTP.Manager -> B.ByteString -> B.ByteString -> IO ()
+handleQuery :: TMChan OutMessage -> HTTP.Manager -> B.ByteString -> B.ByteString -> IO ()
 handleQuery outChan manager target query = void $ runMaybeT $ do
     let queryString = UB.toString query
     response <- liftMaybe <=< liftIO $ DQ.query manager queryString
 
     answer <- liftMaybe $ generateAnswer queryString response
-    liftIO $ writeChan outChan (OutIRCMessage $ answerMessage (UB.fromString answer))
+    liftIO . atomically $ writeTMChan outChan (OutIRCMessage $ answerMessage (UB.fromString answer))
 
     where
         answerMessage answer = IRC.Message {  IRC.msg_prefix = Nothing,

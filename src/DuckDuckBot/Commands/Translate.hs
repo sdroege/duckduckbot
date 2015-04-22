@@ -30,7 +30,9 @@ import qualified Data.Conduit.List as CL
 
 import qualified Network.IRC as IRC
 
-import Control.Concurrent
+import Control.Concurrent.MVar
+import Control.Concurrent.STM
+import Control.Concurrent.STM.TMChan
 import Control.Concurrent.Async
 
 import Control.Applicative
@@ -85,7 +87,7 @@ translateCommandHandler inChan outChan = do
         isTranslateCommand (IRC.Message _ "PRIVMSG" [_, s]) | "!x." `B.isPrefixOf` s = True
         isTranslateCommand _ = False
 
-handleTranslateCommand :: MonadIO m => HTTP.Manager -> (String, String) -> MVar (Maybe (B.ByteString, Int64)) -> Chan OutMessage -> IRC.Message -> m ()
+handleTranslateCommand :: MonadIO m => HTTP.Manager -> (String, String) -> MVar (Maybe (B.ByteString, Int64)) -> TMChan OutMessage -> IRC.Message -> m ()
 handleTranslateCommand manager client oauth outChan m
         | (Just target)           <- maybeGetPrivMsgReplyTarget m
         , (Just (from, to, text)) <- parseCommandString m
@@ -146,7 +148,7 @@ getAccessToken manager client oauth = do
                      return (Just (accessToken, fromIntegral expiresIn + currentTime'), accessToken)
         Just v@(accessToken, _) -> return (Just v, accessToken)
 
-handleTranslate :: Chan OutMessage -> HTTP.Manager -> (String, String) -> B.ByteString -> Maybe String -> String -> String -> MVar (Maybe (B.ByteString, Int64)) -> IO ()
+handleTranslate :: TMChan OutMessage -> HTTP.Manager -> (String, String) -> B.ByteString -> Maybe String -> String -> String -> MVar (Maybe (B.ByteString, Int64)) -> IO ()
 handleTranslate outChan manager client target from to text oauth = void $ runMaybeT $ do
 
     accessToken <- liftIO $ modifyMVar oauth (getAccessToken manager client)
@@ -171,7 +173,7 @@ handleTranslate outChan manager client target from to text oauth = void $ runMay
 
     let Just translation = getXMLString . UB.toString . BL.toStrict . HTTP.responseBody $ resp
 
-    liftIO $ writeChan outChan (OutIRCMessage $ translationMessage (UB.fromString translation))
+    liftIO . atomically $ writeTMChan outChan (OutIRCMessage $ translationMessage (UB.fromString translation))
 
     where
         translationMessage translation = IRC.Message { IRC.msg_prefix = Nothing

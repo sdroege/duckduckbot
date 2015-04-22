@@ -1,3 +1,5 @@
+{-# LANGUAGE RankNTypes #-}
+
 module DuckDuckBot.Commands.Ping (
   pingCommandHandlerMetadata
 ) where
@@ -7,13 +9,14 @@ import DuckDuckBot.Utils
 
 import qualified Network.IRC as IRC
 
-import Data.Int
+import Data.IORef
 import Data.Conduit
 import qualified Data.Conduit.List as CL
 
+import Control.Applicative
 import Control.Monad
-import Control.Concurrent
-import Control.Concurrent.Async
+import Control.Concurrent.STM
+import Control.Concurrent.STM.TMChan
 
 import Control.Monad.IO.Class
 
@@ -26,51 +29,54 @@ pingCommandHandlerMetadata = MessageHandlerMetadata {
     messageHandlerMetadataHandler = pingCommandHandler
 }
 
+sourceChanWithTimeout :: MonadIO m => TMChan a -> Int -> Producer m (Either Int a)
+sourceChanWithTimeout chan tv = loop 0
+    where
+        timeout t = do
+            v <- readTVar t
+            unless v retry
+
+        close = liftIO . atomically $ closeTMChan chan
+
+        loop c = do
+            t <- liftIO $ registerDelay tv
+            a <- liftIO . atomically $
+                (Right <$> readTMChan chan) `orElse` (timeout t *> return (Left (c + 1)))
+
+            case a of
+                Right (Just a') -> yieldOr (Right a') close >> loop 0
+                Left c'         -> yieldOr (Left c')  close >> loop c'
+                Right Nothing   -> return ()
+
 pingCommandHandler :: MessageHandler
 pingCommandHandler inChan outChan = do
-    currentTime <- liftIO getCurrentMonotonicTime
-    lastMessageTime <- liftIO $ newMVar currentTime
-    serverName <- liftIO (newMVar Nothing :: IO (MVar (Maybe IRC.ServerName)))
+    serverName <- liftIO $ newIORef Nothing
 
-    liftIO $ bracket (async $ checkTimeout serverName lastMessageTime outChan) cancel $ \a -> do
-        link a
+    sourceChanWithTimeout inChan 120000000
+        =$= CL.mapMaybeM (handlePingCommand serverName)
+        $$ CL.map OutIRCMessage
+        =$= sinkChan outChan
 
-        sourceChan inChan
-            =$= takeIRCMessage
-            =$= CL.mapMaybeM (handlePingCommand serverName lastMessageTime)
-            $$ CL.map OutIRCMessage
-            =$= sinkChan outChan
-
-handlePingCommand :: MVar (Maybe IRC.ServerName) -> MVar Int64 -> IRC.Message -> IO (Maybe IRC.Message)
-handlePingCommand serverName lastMessageTime msg = do
-    liftIO $ modifyMVar_ lastMessageTime (const getCurrentMonotonicTime)
+handlePingCommand :: MonadIO m => IORef (Maybe IRC.ServerName) -> Either Int InMessage -> m (Maybe IRC.Message)
+handlePingCommand serverName msg = do
+    case msg of
+        Right (InIRCMessage (IRC.Message (Just (IRC.Server name)) _ _)) -> liftIO $ writeIORef serverName (Just name)
+        _                                                               -> return ()
 
     case msg of
-        (IRC.Message (Just (IRC.Server name)) _ _) -> modifyMVar_ serverName (\_ -> return . Just $ name)
-        _                                          -> return ()
-
-    case msg of
-        (IRC.Message _ "PING" targets) -> return $ Just (pongMessage targets)
-        _                              -> return Nothing
+        Right (InIRCMessage (IRC.Message _ "PING" targets)) -> return $ Just (pongMessage targets)
+        Right _                                             -> return Nothing
+        Left c | c < 4                                      -> do
+                                                                    s <- liftIO $ readIORef serverName
+                                                                    return $ fmap pingMessage s
+               | otherwise                                  -> liftIO $ throwIO TimeoutException
     where
         pongMessage targets = IRC.Message { IRC.msg_prefix = Nothing,
                                             IRC.msg_command = "PONG",
                                             IRC.msg_params = targets
                                           }
-
-checkTimeout :: MVar (Maybe IRC.ServerName) -> MVar Int64 -> Chan OutMessage -> IO ()
-checkTimeout serverName lastMessageTime outChan = forever $ do
-    threadDelay 30000000
-
-    s <- readMVar serverName
-    l <- readMVar lastMessageTime
-    n <- getCurrentMonotonicTime
-
-    let diff = n - l
-
-    case s of
-        Nothing              -> throwIO TimeoutException
-        Just s' | diff > 300 -> throwIO TimeoutException
-                | diff > 120 -> writeChan outChan $ OutIRCMessage (IRC.Message Nothing "PING" [s'])
-                | otherwise  -> checkTimeout serverName lastMessageTime outChan
+        pingMessage target  = IRC.Message { IRC.msg_prefix = Nothing,
+                                            IRC.msg_command = "PING",
+                                            IRC.msg_params = [target]
+                                          }
 

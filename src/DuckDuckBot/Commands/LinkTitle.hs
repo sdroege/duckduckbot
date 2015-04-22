@@ -25,7 +25,8 @@ import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Reader.Class
 import Control.Monad.Trans.Maybe
-import Control.Concurrent
+import Control.Concurrent.STM
+import Control.Concurrent.STM.TMChan
 import Control.Concurrent.Async hiding (link)
 import Control.Exception
 
@@ -50,7 +51,7 @@ linkTitleCommandHandler inChan outChan = do
         =$= CL.mapM_ (handleMessage nick manager outChan)
         $$ CL.sinkNull
 
-handleMessage :: MonadIO m => String -> HTTP.Manager -> Chan OutMessage -> IRC.Message -> m ()
+handleMessage :: MonadIO m => String -> HTTP.Manager -> TMChan OutMessage -> IRC.Message -> m ()
 handleMessage nick manager outChan m@(IRC.Message (Just (IRC.NickName n _ _)) "PRIVMSG" [_, s])
         | (Just link)   <- extractedLink
         , (Just target) <- maybeGetPrivMsgReplyTarget m
@@ -66,12 +67,12 @@ handleMessage nick manager outChan m@(IRC.Message (Just (IRC.NickName n _ _)) "P
 
 handleMessage _ _ _ _ = return ()
 
-handleLink :: Chan OutMessage -> HTTP.Manager -> B.ByteString -> String -> IO ()
+handleLink :: TMChan OutMessage -> HTTP.Manager -> B.ByteString -> String -> IO ()
 handleLink outChan manager target link = void $ runMaybeT $ do
     content <- liftMaybe <=< liftIO $ getContent manager link
     let tags = parseTags content
     title <- liftMaybe $ getTitle tags
-    void $ liftIO $ writeChan outChan $ OutIRCMessage $ generateMessage title
+    liftIO . atomically $ writeTMChan outChan $ OutIRCMessage $ generateMessage title
 
     where
         getTitle = fmap (T.strip . filterControl) . headDef Nothing . fmap maybeTagText . getTitleBlock . getHeadBlock . getHtmlBlock

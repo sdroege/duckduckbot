@@ -25,6 +25,8 @@ executable duckduckbot
                        transformers,
                        mtl,
                        async,
+                       stm,
+                       stm-chans,
                        bytestring,
                        text,
                        text-icu,

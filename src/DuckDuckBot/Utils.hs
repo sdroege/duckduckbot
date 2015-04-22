@@ -15,7 +15,8 @@ import DuckDuckBot.Types
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Maybe
-import Control.Concurrent (Chan, readChan, writeChan)
+import Control.Concurrent.STM
+import Control.Concurrent.STM.TMChan
 
 import Data.Int
 import Data.Conduit
@@ -46,20 +47,22 @@ maybeGetPrivMsgReplyTarget _                      = Nothing
 liftMaybe :: (MonadPlus m) => Maybe a -> MaybeT m a
 liftMaybe = maybe mzero return
 
-sourceChan :: MonadIO m => Chan a -> Producer m a
-sourceChan chan = CC.repeatM (liftIO $ readChan chan)
+sourceChan :: MonadIO m => TMChan a -> Producer m a
+sourceChan chan = loop
+    where
+        loop = do
+            a <- liftIO . atomically $ readTMChan chan
+            case a of
+                Just a' -> yieldOr a' (liftIO . atomically $ closeTMChan chan) >> loop
+                Nothing -> return ()
 
-sinkChan :: MonadIO m => Chan a -> Consumer a m ()
-sinkChan chan = CC.mapM_ (liftIO . writeChan chan)
+sinkChan :: MonadIO m => TMChan a -> Consumer a m ()
+sinkChan chan = CC.mapM_ (liftIO . atomically . writeTMChan chan)
 
 takeIRCMessage :: Monad m => Conduit InMessage m IRC.Message
-takeIRCMessage = CC.takeWhile (not . isQuit) =$= CL.mapMaybe unwrapInIRCMessage
+takeIRCMessage = CL.map unwrapInIRCMessage
     where
-        isQuit Quit = True
-        isQuit _    = False
-
-        unwrapInIRCMessage (InIRCMessage m) = Just m
-        unwrapInIRCMessage _                = Nothing
+        unwrapInIRCMessage (InIRCMessage m) = m
 
 -- New versions return Int64 so it works for more than 136 years,
 -- which makes the fromIntegral unnecessary
