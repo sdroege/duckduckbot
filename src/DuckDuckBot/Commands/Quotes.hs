@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable, TypeFamilies, TemplateHaskell, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveDataTypeable, DataKinds, TypeSynonymInstances, FlexibleInstances, MultiParamTypeClasses, TypeFamilies, TemplateHaskell, GeneralizedNewtypeDeriving #-}
 module DuckDuckBot.Commands.Quotes (
   quotesCommandHandlerMetadata
 ) where
@@ -10,13 +10,14 @@ import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as UB
 import qualified Data.Text as T
 
-import Data.IxSet as IX
+import Data.Data
+
+import Data.IxSet.Typed as IX
 
 import Data.Acid
 import Data.Acid.Local
 import Data.Acid.Advanced
 import Data.SafeCopy
-import Data.Data
 import Data.Time
 
 import Text.Parsec hiding ((<|>))
@@ -39,19 +40,19 @@ import System.Environment.XDG.BaseDir
 import System.Locale
 
 newtype QuoteId = QuoteId { unQuoteId :: Integer }
-    deriving (Eq, Ord, Data, Enum, Typeable)
+    deriving (Eq, Ord, Enum, Typeable, Data)
 $(deriveSafeCopy 1 'base ''QuoteId)
 
 newtype QuoteAuthor = QuoteAuthor {unQuoteAuthor :: T.Text}
-    deriving (Eq, Ord, Data, Typeable)
+    deriving (Eq, Ord, Typeable, Data)
 $(deriveSafeCopy 1 'base ''QuoteAuthor)
 
 newtype QuoteTime = QuoteTime {unQuoteTime :: UTCTime}
-    deriving (Eq, Ord, Data, Typeable)
+    deriving (Eq, Ord, Typeable, Data)
 $(deriveSafeCopy 1 'base ''QuoteTime)
 
 newtype QuoteText = QuoteText {unQuoteText :: T.Text}
-    deriving (Eq, Ord, Data, Typeable)
+    deriving (Eq, Ord, Typeable, Data)
 $(deriveSafeCopy 1 'base ''QuoteText)
 
 data Quote = Quote {
@@ -59,20 +60,21 @@ data Quote = Quote {
     quoteTime :: QuoteTime,
     quoteAuthor :: QuoteAuthor,
     quoteText :: QuoteText
-} deriving (Eq, Ord, Data, Typeable)
+} deriving (Eq, Ord, Typeable, Data)
 
 $(deriveSafeCopy 1 'base ''Quote)
 
-instance Indexable Quote where
-    empty = ixSet
-        [ ixFun $ \q -> [quoteId q],
-          ixFun $ \q -> [quoteAuthor q]
-        ]
+type QuoteIxs = '[QuoteId, QuoteAuthor]
+
+instance Indexable QuoteIxs Quote where
+    indices = IX.ixList
+              (IX.ixGen (Proxy :: Proxy QuoteId))
+              (IX.ixGen (Proxy :: Proxy QuoteAuthor))
 
 data Quotes = Quotes {
     nextQuoteId :: QuoteId,
-    quotes :: IxSet Quote
-} deriving (Data, Typeable)
+    quotes :: IX.IxSet QuoteIxs Quote
+} deriving (Typeable)
 
 $(deriveSafeCopy 1 'base ''Quotes)
 
@@ -89,7 +91,7 @@ addQuote time author text = do
             quoteText   = QuoteText text }
 
     put $ qs {  nextQuoteId = succ (nextQuoteId qs),
-                quotes      = insert quote (quotes qs)
+                quotes      = IX.insert quote (quotes qs)
              }
     return (unQuoteId (nextQuoteId qs))
 
@@ -97,7 +99,7 @@ rmQuote :: QuoteId -> Update Quotes ()
 rmQuote k = do
     qs <- get
 
-    put $ qs { quotes = deleteIx k (quotes qs) }
+    put $ qs { quotes = IX.deleteIx k (quotes qs) }
 
 getQuote :: Integer -> Query Quotes (Maybe Quote)
 getQuote k = do

@@ -48,7 +48,7 @@ executable duckduckbot
                        http-client,
                        http-client-tls,
                        xdg-basedir,
-                       ixset,
+                       ixset-typed,
                        directory,
                        filepath,
                        exceptions,
