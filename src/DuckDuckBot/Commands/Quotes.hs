@@ -68,8 +68,8 @@ type QuoteIxs = '[QuoteId, QuoteAuthor]
 
 instance Indexable QuoteIxs Quote where
     indices = IX.ixList
-              (IX.ixGen (Proxy :: Proxy QuoteId))
-              (IX.ixGen (Proxy :: Proxy QuoteAuthor))
+                (IX.ixFun $ \q -> [quoteId q])
+                (IX.ixFun $ \q -> [quoteAuthor q])
 
 data Quotes = Quotes {
     nextQuoteId :: QuoteId,
