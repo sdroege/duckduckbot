@@ -2,7 +2,10 @@ module DuckDuckBot.Compat (
 #if !MIN_VERSION_base(4,6,0)
     forkFinally,
     lookupEnv,
-    atomicModifyIORef'
+    atomicModifyIORef',
+#endif
+#if !MIN_VERSION_base(4,8,0)
+    defaultTimeLocale
 #endif
 ) where
 
@@ -12,7 +15,13 @@ import Control.Concurrent
 import System.IO.Error hiding (try)
 import System.Environment
 import Data.IORef
+#endif
 
+#if !MIN_VERSION_base(4,8,0)
+import System.Locale (defaultTimeLocale)
+#endif
+
+#if !MIN_VERSION_base(4,6,0)
 lookupEnv :: String -> IO (Maybe String)
 lookupEnv k =
     let checkException e | isDoesNotExistError e = return Nothing

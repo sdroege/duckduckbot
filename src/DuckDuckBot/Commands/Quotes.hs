@@ -5,6 +5,7 @@ module DuckDuckBot.Commands.Quotes (
 
 import DuckDuckBot.Types
 import DuckDuckBot.Utils
+import DuckDuckBot.Compat
 
 import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as UB
@@ -37,7 +38,6 @@ import System.Random
 import System.FilePath
 import System.Directory
 import System.Environment.XDG.BaseDir
-import System.Locale
 
 newtype QuoteId = QuoteId { unQuoteId :: Integer }
     deriving (Eq, Ord, Enum, Typeable, Data)
