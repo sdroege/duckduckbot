@@ -1,4 +1,4 @@
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RankNTypes, FlexibleContexts #-}
 
 module DuckDuckBot.Commands.Ping (
   pingCommandHandlerMetadata
@@ -9,16 +9,15 @@ import DuckDuckBot.Utils
 
 import qualified Network.IRC as IRC
 
-import Data.IORef
 import Data.Conduit
 import qualified Data.Conduit.List as CL
 
 import Control.Applicative
 import Control.Monad
+import Control.Monad.State.Strict
+
 import Control.Concurrent.STM
 import Control.Concurrent.STM.TMChan
-
-import Control.Monad.IO.Class
 
 import Control.Exception
 
@@ -49,26 +48,24 @@ sourceChanWithTimeout chan tv = loop 0
                 Right Nothing   -> return ()
 
 pingCommandHandler :: MessageHandler
-pingCommandHandler inChan outChan = do
-    serverName <- liftIO $ newIORef Nothing
-
+pingCommandHandler inChan outChan = flip evalStateT Nothing $
     sourceChanWithTimeout inChan 120000000
-        =$= CL.mapMaybeM (handlePingCommand serverName)
+        =$= CL.mapMaybeM handlePingCommand
         $$ CL.map OutIRCMessage
         =$= sinkChan outChan
 
-handlePingCommand :: MonadIO m => IORef (Maybe IRC.ServerName) -> Either Int InMessage -> m (Maybe IRC.Message)
-handlePingCommand serverName msg = do
+handlePingCommand :: (MonadIO m, MonadState (Maybe IRC.ServerName) m) => Either Int InMessage -> m (Maybe IRC.Message)
+handlePingCommand msg = do
     case msg of
-        Right (InIRCMessage (IRC.Message (Just (IRC.Server name)) _ _)) -> liftIO $ writeIORef serverName (Just name)
+        Right (InIRCMessage (IRC.Message (Just (IRC.Server name)) _ _)) -> put (Just name)
         _                                                               -> return ()
 
     case msg of
         Right (InIRCMessage (IRC.Message _ "PING" targets)) -> return $ Just (pongMessage targets)
         Right _                                             -> return Nothing
         Left c | c < 4                                      -> do
-                                                                    s <- liftIO $ readIORef serverName
-                                                                    return $ fmap pingMessage s
+                                                                    s <- get
+                                                                    return $ pingMessage <$> s
                | otherwise                                  -> liftIO $ throwIO TimeoutException
     where
         pongMessage targets = IRC.Message { IRC.msg_prefix = Nothing,
