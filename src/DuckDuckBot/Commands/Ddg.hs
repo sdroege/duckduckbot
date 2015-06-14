@@ -83,7 +83,7 @@ generateAnswer q r = if null answer then Nothing else Just answer
         (a, b) = generateAnswer' q r
         m = min maxIRCLen (length b)
         n = max 0 (maxIRCLen-m)
-        dots = if n < length a then "..." else ""
+        dots = if n < length a then "…" else ""
 
 generateAnswer' :: String -> DQ.Results -> (String, String)
 generateAnswer' q r | DQ.resultsAnswer r /= ""                          = (DQ.resultsAnswer r, " (http://ddg.gg/" ++ escapedQuery ++ ")")
