@@ -80,7 +80,7 @@ handleLink outChan manager target link = void $ runMaybeT $ do
         getHtmlBlock = getBlock "html"
         getHeadBlock = getBlock "head"
         getTitleBlock = getBlock "title"
-        filterControl = T.filter isPrint . T.map (\c -> if isSpace c then ' ' else c)
+        filterControl = T.filter isPrint . T.map (\c -> if isSpace c then ' ' else c) . T.filter (/= '\r')
 
         generateMessage title = IRC.Message {  IRC.msg_prefix = Nothing,
                                                IRC.msg_command = "PRIVMSG",
