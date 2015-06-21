@@ -21,7 +21,6 @@ executable duckduckbot
   ghc-options:         -Wall -threaded
   default-extensions:  OverloadedStrings, CPP
   build-depends:       base ==4.*,
-                       MissingH,
                        transformers,
                        mtl,
                        async,
