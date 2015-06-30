@@ -1,3 +1,5 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 module DuckDuckBot.Config (
     getConfig
 ) where
@@ -6,34 +8,39 @@ import DuckDuckBot.Types (Config (..))
 import DuckDuckBot.Compat
 
 import Data.Maybe
-import System.Environment
+import Control.Applicative
 import Control.Monad
+import Control.Monad.Except
 
 import Safe
+import System.Environment (lookupEnv)
+
+newtype Env a = Env { unEnv :: ExceptT String IO a }
+    deriving (Functor, Applicative, Alternative)
+
+getEnv :: Env a -> IO (Either String a)
+getEnv = runExceptT . unEnv
+
+env :: String -> Env String
+env key = Env (liftIO (lookupEnv key) >>= maybe (throwError $ "Can't get environment variable " ++ key) return)
+
+envRead :: Read a => String -> Env a
+envRead key = Env (unEnv (env key) >>= maybe (throwError $ "Can't parse environment variable " ++ key) return . readMay)
+
+config :: Env Config
+config = Config
+   <$> env "DDB_SERVER"
+   <*> envRead "DDB_PORT"
+   <*> env "DDB_NICK"
+   <*> optional (env "DDB_NICKSERV_PASSWORD")
+   <*> env "DDB_CHANNEL"
+   <*> ((== "1") <$> env "DDB_USE_SSL")
+   <*> optional (env "DDB_AUTH_PASSWORD")
 
 getConfig :: IO Config
 getConfig = do
-    server           <- lookupEnv "DDB_SERVER"
-    portString       <- lookupEnv "DDB_PORT"
-    nick             <- lookupEnv "DDB_NICK"
-    nickServPassword <- lookupEnv "DDB_NICKSERV_PASSWORD"
-    channel          <- lookupEnv "DDB_CHANNEL"
-    useSslString     <- lookupEnv "DDB_USE_SSL"
-    authPassword     <- lookupEnv "DDB_AUTH_PASSWORD"
+    c <- getEnv config
+    case c of
+        Left  s  -> error ("Invalid config: " ++ s)
+        Right c' -> return c'
 
-    when (isNothing server) $ error "Need to set server in $DDB_SERVER"
-    when (isNothing portString) $ error "Need to set port in $DDB_PORT"
-    let port = readMay (fromJust portString) :: Maybe Int
-    when (isNothing port) $ error "Need to set port in $DDB_PORT"
-    when (isNothing nick) $ error "Need to set nickname in $DDB_NICK"
-    when (isNothing channel) $ error "Need to set channel in $DDB_CHANNEL"
-
-    return Config {
-        cfgServer=fromJust server,
-        cfgPort=fromJust port,
-        cfgNick=fromJust nick,
-        cfgNickServPassword=nickServPassword,
-        cfgChannel=fromJust channel,
-        cfgUseSsl=useSslString == Just "1",
-        cfgAuthPassword=authPassword
-    }
