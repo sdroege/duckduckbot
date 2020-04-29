@@ -50,6 +50,7 @@ data OwmMain = OwmMain
 
 data OwmWind = OwmWind
     { owmWindSpeed :: Double
+    , owmWindDeg :: Double
     , owmWindGust :: Maybe Double
     } deriving (Show, Eq)
 
@@ -81,6 +82,7 @@ instance FromJSON OwmMain where
 instance FromJSON OwmWind where
     parseJSON (Object v) = OwmWind
                                 <$> v .: "speed"
+                                <*> v .: "deg"
                                 <*> v .:? "gust"
     parseJSON _          = mzero
 
@@ -161,11 +163,11 @@ handleWeather outChan manager appId target location = void $ runMaybeT $ do
         generateReply (Just (OwmReply name
                                 (OwmSys country)
                                 (OwmMain temp humidity)
-                                (OwmWind speed gust)
+                                (OwmWind speed deg gust)
                                 (OwmWeather weather description:_))) = "Weather for " ++ name ++ " (" ++ country ++ "): "
                                                                          ++ weather ++ " (" ++ description ++ "), Temperature: "
                                                                          ++ show temp ++ "°C, Humidity: " ++ show humidity
-                                                                         ++ "%, Wind speed: " ++ show speed ++ "m/s"
+                                                                         ++ "%, Wind speed: " ++ show speed ++ "m/s at " ++ show deg
                                                                          ++ maybe "." (\g -> ", gust: " ++ show g ++ "m/s.") gust
 
         generateReply _                                                = "Failed to get weather for " ++ UB.toString location
