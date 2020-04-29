@@ -95,7 +95,7 @@ getContent m url =
     -- Better do nothing than crashing when we can't do the HTTP request
     handle (\(SomeException e) -> putStrLn ("Exception while handling link request \"" ++ url ++ "\": " ++ show e) >> return Nothing) $ runMaybeT $ do
         baseReq <- HTTP.parseUrl url
-        let headers = (HTTPH.hConnection, "Keep-Alive") : (HTTPH.hAccept, "text/html") : ("Accept-Charset", "utf8, *") : ("Accept-Language", "en, *;q=0.1") : ("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36") : HTTP.requestHeaders baseReq
+        let headers = (HTTPH.hConnection, "Keep-Alive") : (HTTPH.hAccept, "text/html") : ("Accept-Charset", "utf8, *") : ("Accept-Language", "en, *;q=0.1") : (HTTPH.hUserAgent, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36") : HTTP.requestHeaders baseReq
             req  = baseReq { HTTP.requestHeaders=headers }
 
         (charset, body) <- liftMaybe <=< liftIO $ HTTP.withResponse req m (readChunks (100 * 1024))
